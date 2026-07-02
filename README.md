@@ -129,6 +129,30 @@ MAX_TRAIN_STEPS=1 \
 bash operator_commands/prime_rl_opd_4xh200_muon_imo_ctx16384_2train_1policy_1teacher.sh
 ```
 
+## Docker Build
+
+`Dockerfile` is self-contained: it clones this public repository during the
+image build, copies `src/` into `/app`, and installs the CUDA training stack.
+This means the file can be shared without also sharing a local checkout.
+
+```bash
+DOCKER_BUILDKIT=1 docker build -f Dockerfile -t aimo-proof-pilot:cu130 .
+```
+
+If you only have the Dockerfile and no build context, build from stdin:
+
+```bash
+DOCKER_BUILDKIT=1 docker build -t aimo-proof-pilot:cu130 - < Dockerfile
+```
+
+For private wheel downloads, pass an HF token as a BuildKit secret:
+
+```bash
+DOCKER_BUILDKIT=1 docker build \
+  --secret id=hf_token,src=/path/to/hf_token.txt \
+  -f Dockerfile -t aimo-proof-pilot:cu130 .
+```
+
 ## Singularity Build
 
 Build scripts are in `scripts/`. A typical end-to-end build/upload flow is:

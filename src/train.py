@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DEFAULT_SUBMISSIONS_REPO = "https://github.com/nguyen599/submissions-instructions.git"
+DEFAULT_SUBMISSIONS_REPO = "https://github.com/nguyen599/aimo-proof-pilot.git"
 DEFAULT_OPEN_INSTRUCT_REPO = "https://github.com/nguyen599/open-instruct.git"
 DEFAULT_OLMO_CORE_REPO = "https://github.com/nguyen599/OLMo-core.git"
 DEFAULT_RLCSD_REPO = "https://github.com/THU-BPM/RLCSD.git"
