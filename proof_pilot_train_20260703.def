@@ -1,0 +1,104 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.11.0-cuda13.0-cudnn9-devel
+
+%environment
+    export SUBMISSIONS_REPO=https://github.com/nguyen599/aimo-proof-pilot.git
+    export SUBMISSIONS_REF=main
+    export SUBMISSION_REPO=https://github.com/nguyen599/aimo-proof-pilot.git
+    export SUBMISSION_REF=main
+    export SUBMISSION_DIR=/workspace/aimo-proof-pilot
+    export SUBMISSIONS_RUNTIME_DIR=/tmp/aimo-proof-pilot-runtime
+    export OPEN_INSTRUCT_DIR=/opt/open-instruct
+    export OLMO_CORE_DIR=/opt/OLMo-core
+    export MEGATRON_CORE_DIR=/opt/Megatron-LM
+    export PYTHONPATH=/app:/workspace/aimo-proof-pilot/src:/tmp/aimo-proof-pilot-runtime/src:/opt/open-instruct:/opt/OLMo-core/src:/opt/Megatron-LM
+    export HF_HOME=/tmp/olmo_train_runtime_cache/hf
+    export HUGGINGFACE_HUB_CACHE=/tmp/olmo_train_runtime_cache/hf
+    export TRANSFORMERS_CACHE=/tmp/olmo_train_runtime_cache/hf
+    export TORCH_HOME=/tmp/olmo_train_runtime_cache/torch
+    export TORCHINDUCTOR_CACHE_DIR=/tmp/olmo_train_runtime_cache/torchinductor
+    export TRITON_CACHE_DIR=/tmp/olmo_train_runtime_cache/triton
+    export XDG_CACHE_HOME=/tmp/olmo_train_runtime_cache/xdg
+    export FLASHINFER_CACHE_DIR=/tmp/olmo_train_runtime_cache/flashinfer
+    export VLLM_CACHE_ROOT=/tmp/olmo_train_runtime_cache/vllm
+    export WANDB_DIR=/tmp/olmo_train_runtime_cache/wandb
+    export WANDB_CACHE_DIR=/tmp/olmo_train_runtime_cache/wandb_cache
+    export WANDB_CONFIG_DIR=/tmp/olmo_train_runtime_cache/wandb_config
+    export OLMO_RUNTIME_CACHE_ROOT=/tmp/olmo_train_runtime_cache
+    export OLMO_OUTPUT_ROOT=/tmp/olmo_train_outputs
+    export OLMO_LOG_ROOT=/tmp/olmo_train_logs
+    export TMPDIR=/tmp
+    export TMP=/tmp
+    export TEMP=/tmp
+    export GIT_LFS_SKIP_SMUDGE=1
+    export USE_HUB_KERNELS=NO
+    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    export TORCH_DIST_INIT_BARRIER=1
+    export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+    export TORCH_NCCL_AVOID_RECORD_STREAMS=1
+    export NCCL_DEBUG=WARN
+    export NCCL_NVLS_ENABLE=1
+    export HTTPX_LOG_LEVEL=WARNING
+    export OMP_NUM_THREADS=8
+    export HF_XET_HIGH_PERFORMANCE=1
+    export CUDNN_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cudnn/include
+    export CPLUS_INCLUDE_PATH=/usr/local/cuda-13.0/include:/usr/local/cuda-13.0/include/cccl:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/include:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/include
+    export CPATH=/usr/local/cuda-13.0/targets/x86_64-linux/include:/usr/local/cuda/include:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/include
+    export CUDAToolkit_ROOT=/usr/local/cuda-13.0
+    export CUDA_HOME=/usr/local/cuda-13.0
+    export CUDA_PATH=/usr/local/cuda-13.0
+    export CUDACXX=/usr/local/cuda-13.0/bin/nvcc
+    export GDRCOPY_HOME=/root/gdrcopy
+    export PATH=/usr/local/cuda-13.0/bin:/usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    export LD_LIBRARY_PATH=/usr/local/cudnn/lib:/usr/local/cuda-13.0/lib64:/usr/local/ucx/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib64:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
+    # Pass secrets at build/runtime via the environment; do not commit them.
+    export HF_TOKEN="${HF_TOKEN:-}"
+    export WANDB_API_KEY="${WANDB_API_KEY:-}"
+    export GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    export GIT_LFS_SKIP_SMUDGE=1
+    export SUBMISSION_REPO="${SUBMISSION_REPO:-${SUBMISSIONS_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}}"
+    export SUBMISSION_REF="${SUBMISSION_REF:-${SUBMISSIONS_REF:-main}}"
+    export SUBMISSIONS_REPO="${SUBMISSION_REPO}"
+    export SUBMISSIONS_REF="${SUBMISSION_REF}"
+    export SUBMISSION_DIR="${SUBMISSION_DIR:-/workspace/aimo-proof-pilot}"
+
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates git
+    rm -rf /var/lib/apt/lists/*
+
+    set +x
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+    fi
+    set -x
+
+    mkdir -p /app
+    rm -rf "${SUBMISSION_DIR}"
+    git clone --filter=blob:none "${SUBMISSION_REPO}" "${SUBMISSION_DIR}"
+    cd "${SUBMISSION_DIR}"
+    git fetch --depth 1 origin "${SUBMISSION_REF}" || true
+    git checkout --force "${SUBMISSION_REF}" || git checkout --force FETCH_HEAD
+    cp -a "${SUBMISSION_DIR}/src/." /app/
+    git config --global --unset-all url."https://${GITHUB_TOKEN:-}@github.com/".insteadOf || true
+
+    mkdir -p /tmp/olmo_train_runtime_cache/hf /tmp/olmo_train_runtime_cache/xdg /tmp/olmo_train_runtime_cache/torch /tmp/olmo_train_runtime_cache/torchinductor /tmp/olmo_train_runtime_cache/triton /tmp/olmo_train_runtime_cache/vllm
+    cd /app
+    chmod +x /app/*.sh
+    OLMO_CORE_REF="${OLMO_CORE_REF:-main}" \
+    OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF:-main}" \
+    CUDA_VERSION="${CUDA_VERSION:-13.0.2}" \
+    INSTALL_MODAL_SIMP_EXTRAS=1 \
+    INSTALL_FULL_SYSTEM_APT="${INSTALL_FULL_SYSTEM_APT:-1}" \
+    INSTALL_CONTAINER_BUILD_APT="${INSTALL_CONTAINER_BUILD_APT:-0}" \
+    INSTALL_SINGULARITY_CE="${INSTALL_SINGULARITY_CE:-0}" \
+    INSTALL_APPTAINER_IN_IMAGE="${INSTALL_APPTAINER_IN_IMAGE:-0}" \
+    INSTALL_APEX="${INSTALL_APEX:-1}" \
+    INSTALL_MEGATRON_CORE="${INSTALL_MEGATRON_CORE:-1}" \
+    /app/install_training_deps.sh
+
+%runscript
+    exec python /app/train.py "$@"

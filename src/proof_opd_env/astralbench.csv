@@ -1,0 +1,69 @@
+question_uuid,id,problem,answer
+380222,open-rl-combinatorics-247678,"Let $G$ be a graph with vertex set $V(G)$.
+Fix an integer $k \ge 1$. A subset $S \subseteq V(G)$ is said to be a $k$-tuple total dominating set if every vertex $v \in V(G)$ has at least $k$ neighbors belonging to $S$, that is,
+\[
+|N(v)\cap S| \ge k \quad \text{for all } v \in V(G).
+\]
+The smallest possible size of such a set is called the $k$-tuple total domination number of $G$ and is denoted by $\gamma_{\times k,t}(G)$.
+For each integer $n \ge 2$, let $P_n$ denote the path on $n$ vertices and let $C_n$ denote the cycle on $n$ vertices.  The Cartesian product of graphs is denoted by $\square$.
+Consider the following three Cartesian products:
+\[
+E_1 = P_3 \square P_{902}, \qquad
+E_2 = C_{512} \square C_{333}, \qquad
+E_3 = P_3 \square P_{451}.
+\]
+Form the weighted sum
+\[
+\mathcal{W}=
+3\,\gamma_{\times 2,t}(E_1)+
+\gamma_{\times 2,t}(E_2)-
+2\,\gamma_{\times 2,t}(E_3).
+\]
+What is the remainder when $\mathcal{W}$ is divided by 8676?",2100
+496924,imo-bench-algebra-030,"There exists an infinite sequence $x_1, x_2, \ldots$ where each term belongs to $[0, 777]$ such that for all positive integers $m < n$, we have $$(m+n)|x_n^2 - x_m^2| \ge D.$$
+Let D denote the maximum value satisfying this condition. What is the remainder when D is divided by 99991?
+",3783
+b90a38,imo-bench-algebra-055,"Consider a sequence of positive integers $x_1, x_2, \ldots$ satisfying the following condition:
+\[
+    (x_{2n + d} - x_{n + d} - n)(x_{2n + d} - x_n - n - d) = 0
+\]
+for all integers $n \ge 32$ and $d \ge 1024$. Find the value of the largest possible positive integer $n$ for which $x_{n + 1} - x_n \neq 1$.",2079
+2b14c7,imo-bench-combinatorics-005,"Consider natural numbers whose decimal representations use only the digits from the set {2, 0, 1, 8}, have at most 16 digits, and are divisible by 3. Let C denote the number of such natural numbers. What is the remainder when C is divided by 10000?",5765
+19d8d0,imo-2025-problem-3-number_theory,A function $f \colon \NN \to \NN$ is said to be \emph{bonza} if \[ f(a)\quad\text{divides}\quad b^a-f(b)^{f(a)} \] for all positive integers $a$ and $b$. Determine the smallest real constant $c$ such that $f(n) \leq cn$ for all bonza functions $f$ and all positive integers $n$.,4
+131968,imo-bench-geometry-003,"Given a convex $n$-sided polygon $B_1\ldots B_n$. Let $Q_i$ ($i = 1,\ldots, n$) be points on the boundary of the polygon such that $B_iQ_i$ divides the area of the polygon in half.  Assume that none of the points $Q_i$ coincide with any vertex of the polygon and that these points lie on $k$ sides of the $n$-sided polygon. For a given value of $n$, determine the minimum possible value of $k$.
+",3
+2bf7ec,pumac-2025-Q8-geometry,"Let $\triangle ABC$ be a triangle with $AC = 33$, $BC = 16$, $AB = 28$ and incenter $I$.
+Let $U$ and $V$ be points on sides $AB$ and $AC$ respectively such that $AU = AV = 20$.
+Let $P$ be the reflection of $B$ over $U$ and let $Q$ be the reflection of $C$ over $V$.
+The circumcircles of triangles $BIP$ and $CIQ$ intersect at a point $S \ne I$.
+Let $M$ be the midpoint of $BC$. Compute the value of $MS^2$.
+",1352
+8be07b,imo-bench-geometry-044,"Given $PQRS$ is a parallelogram. We know that $\angle S = 60^\circ$, $PS = 2$ and $PQ = \sqrt{3} + 1$. Point $N$ is the midpoint of $PS$. Segment $RE$ is the angle bisector of $R$. Find the angle $REQ$ in terms of degree.
+",75
+a6c3fd,imo-bench-number_theory-017,"$\alpha$ is a real number that is not rational, and $k$ is a positive integer. A pair of positive integers $(m, n)$ is called ""pretty"" if $m\lceil n\alpha \rceil - n \lfloor m\alpha \rfloor =k$. A pretty pair $(m, n)$ is called ""cool"" if neither $(m-n, n)$ nor $(m, n-m)$ are pretty pairs. Find the number of cool pairs when $k=2310$.
+",6912
+9f3f0f,stm-2025-p10-geometry,"Let $AFDC$ be a rectangle. Construct points $E$ and $B$ outside of $AFDC$ such that
+\[
+AB = BC = DE = EF = 45
+\]
+and $ABCDEF$ is a convex hexagon. Let $\mathcal{E}$ be an inscribed ellipse tangent to sides
+$AB, BC, CD, DE, EF, FA$ at points $U, V, W, X, Y,$ and $Z$, respectively.
+
+Points $F_1$ and $F_2$, with $F_1$ closer to $B$, are the foci of $\mathcal{E}$ satisfying
+\[
+\triangle ABC \cong \triangle F_1WF_2 \cong \triangle DEF.
+\]
+
+Let $Q$ be on line $CD$ such that $F_1Y \perp ZQ$. Let the area of quadrilateral $F_1QYZ$ is $S$. What is the remainder when $S^2$ is divided by $3^7$?
+",2500
+46f1fe,imo-bench-number_theory-031,"Let $k>l$ be given coprime positive integers greater than 1. Define a function $f: \mathbb{Z}\rightarrow \mathbb{Z}$ as follows: for $x$, $f(x)$ is the smallest value of $|a|+|b|$ among all integers $a,b$ satisfying $ka+lb = x$.
+ An integer $x$ is called 'nice' if $f(x)\geq \max (f(x-a),f(x+a),f(x-b),f(x+b))$. Denote by $F(k,l)$ the the number of nice integers when both $k$ and $l$ are odd, and denote by $G(k,l)$ the number of nice integers when either $k$ or $l$ is even. Suppose that there exists polynomials $p(k,l)$ and $q(k,l)$ such that $F(k,l)=p(k,l)$ for all odd integers $k,l$ and $G(k,l)=q(k,l)$ whenever at least one of $k$ or $l$ is even.  Evaluate $p(3,5)^2 + q(3,5)^2$.",80
+Aimo-1,Aimo-1,"There are $k \geq 3$ different positive integers $a_1, \ldots, a_k$ with product $P$, and sum strictly less than $3 \cdot 10^{6}$. Let $g$ be the largest positive integer that divides each of $(P/a_i)+1$ for $1 \leq i \leq k$. Across all possible choices for $a_i$ and $k \geq 3$, what is the maximum possible value of $g$?",998285
+Aimo-2,Aimo-2,"Let $ABC$ be a triangle such that $AB = 26$, $BC = 17$, and $AC = 25$. Let $\Omega$ and $H$ be the circumcircle and orthocentre of triangle $ABC$, respectively. Let the feet of the altitudes from $A$, $B$, and $C$ in triangle $ABC$ be $D$, $E$, and $F$, respectively. Let lines $EF$ and $BC$ intersect at $X$ and let $AX$ intersect $\Omega$ again at $Q \neq A$. Segment $HQ$ intersects circle $DEF$ at a point $P$. Suppose the ratio $PQ/PE = a/b$ where $a$ and $b$ are coprime positive integers. What is the value of $a+b$?",216
+Aimo-3,Aimo-3,"For a finite, nonempty multiset $S$ of positive integers strictly less than $20$, we define its \emph{index} to be the greatest positive integer $n$ such that for every $i$ with $1 \leq i \leq n$ we can partition $S$ into multisets $A_i$ and $B_i$ in such a way that $A_i=i+B_i$. If no such $n$ exists, we define the index to be equal to $0$.
+
+Let $N$ denote the maximum index across all choices for $S$. Across all choices of $S$ with index $N$, let $M$ denote the smallest possible value for the maximum element in $S$. 
+
+Across all multisets $S$ with index $N$ and maximum element $M$, what is the smallest possible number of elements of $S$ (counted with multiplicity)?
+
+\textit{For two multisets $X$ and $Y$ and a positive integer $l$, we write $X=l+Y$ if $X=\{l+y: y \in Y\}$ where the right-hand side is interpreted as a multiset.}",32
