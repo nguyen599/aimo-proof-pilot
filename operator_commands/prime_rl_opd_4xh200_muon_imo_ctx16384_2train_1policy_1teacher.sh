@@ -76,7 +76,7 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
   --max_seq_length "${CTX_LEN}" \
   --rollout_max_completion_tokens "${COMPLETION_TOKENS}" \
   --optimizer te_fused_adamw \
-  --learning_rate 1e-6 \
+  --learning_rate 1e-7 \
   --weight_decay 0.0 \
   --max_grad_norm 1.0 \
   --prime_checkpoint_interval "${CHECKPOINT_INTERVAL}" \

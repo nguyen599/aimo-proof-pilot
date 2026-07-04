@@ -2529,7 +2529,8 @@ def prepare_runtime_training_dependencies(
             no_deps=True,
             upgrade=True,
         )
-        patch_runtime_vllm_pr47258()
+        if os.environ.get("PRIME_RL_VLLM_OVERRIDE", "0") == "1":
+            patch_runtime_vllm_pr47258()
         if te_required:
             te_ok, te_details = runtime_dependency_probe(
                 site_dir,
