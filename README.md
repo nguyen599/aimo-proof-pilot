@@ -190,8 +190,14 @@ For the provided OPD shell script, bind this repo to `/workspace/aimo-proof-pilo
 
 Use environment variables for credentials:
 
+- `GITHUB_TOKEN` for `train.py --fetch-update` runtime repo clones
 - `HF_TOKEN`
 - `WANDB_API_KEY`
 - `OPENROUTER_API_KEY` if using API-judge paths
+
+For local runs, copy `.env.example` to `.env` (gitignored) and fill in your values.
+`src/train.py` loads the repo-root `.env` at startup without overriding variables already
+set in the environment (`AIMO_ENV_FILE` selects a different file), and the main OPD launch
+script sources the same file so bash-level `PRIME_OPD_*` settings work from one place.
 
 Do not commit model weights, checkpoints, generated caches, `.sif` files, W&B directories, private tokens, or presigned URLs.

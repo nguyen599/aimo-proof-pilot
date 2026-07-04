@@ -24,8 +24,6 @@ from typing import Callable
 
 from train_logging import configure_logging, log_dependency_versions
 from train_utils import path_name_token, sanitize_slug_part, truncate_slug
-os.environ.setdefault("HF_TOKEN", os.environ.get("HUGGING_FACE_HUB_TOKEN", ""))
-os.environ.setdefault("GITHUB_TOKEN", os.environ.get("GITHUB_TOKEN_VALUE", ""))
 
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 WRAPPER_HANDOFF_ENV_KEYS = (
@@ -897,7 +895,7 @@ def download_hf_operator_text(repo_id: str, path_in_repo: str, work_dir: Path) -
         repo_type="dataset",
         cache_dir=str(work_dir / "hf_cache"),
         force_download=True,
-        token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"),
+        token=os.environ.get("HF_TOKEN"),
     )
     return Path(local_path).read_text(encoding="utf-8")
 
@@ -949,7 +947,7 @@ def upload_operator_repo_text(
 def upload_hf_operator_file(repo_id: str, path_in_repo: str, local_path: Path, message: str) -> None:
     from huggingface_hub import HfApi
 
-    api = HfApi(token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+    api = HfApi(token=os.environ.get("HF_TOKEN"))
     api.create_repo(repo_id=repo_id, repo_type="dataset", private=True, exist_ok=True)
     api.upload_file(
         repo_id=repo_id,

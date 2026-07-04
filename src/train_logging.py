@@ -634,10 +634,9 @@ def hf_log_upload_path(args: argparse.Namespace, status: str) -> str:
 
 
 def hf_log_token() -> str | None:
-    for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
-        token = os.environ.get(name)
-        if token:
-            return token
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        return token
     try:
         from huggingface_hub import get_token
 

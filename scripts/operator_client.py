@@ -15,8 +15,6 @@ import time
 from pathlib import Path
 
 from huggingface_hub import HfApi, hf_hub_download
-os.environ.setdefault("HF_TOKEN", os.environ.get("HUGGING_FACE_HUB_TOKEN", ""))
-os.environ.setdefault("GITHUB_TOKEN", os.environ.get("GITHUB_TOKEN_VALUE", ""))
 
 
 DEFAULT_REPO = "nguyen599/command"
@@ -269,7 +267,7 @@ def command_text_from_args(args: argparse.Namespace) -> str:
 
 
 def upload_text(repo_id: str, path_in_repo: str, text: str, message: str) -> None:
-    api = HfApi(token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+    api = HfApi(token=os.environ.get("HF_TOKEN"))
     api.create_repo(repo_id=repo_id, repo_type="dataset", private=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
         handle.write(text.rstrip() + "\n")
@@ -349,12 +347,12 @@ def list_output_paths(args: argparse.Namespace) -> list[str]:
                 file=sys.stderr,
                 flush=True,
             )
-            files = HfApi(token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")).list_repo_files(
+            files = HfApi(token=os.environ.get("HF_TOKEN")).list_repo_files(
                 repo_id=repo_id,
                 repo_type="dataset",
             )
     else:
-        files = HfApi(token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")).list_repo_files(
+        files = HfApi(token=os.environ.get("HF_TOKEN")).list_repo_files(
             repo_id=repo_id,
             repo_type="dataset",
         )
