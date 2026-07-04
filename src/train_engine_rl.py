@@ -166,6 +166,17 @@ def write_prime_rl_config(path: Path, config: dict[str, Any]) -> None:
                 continue
             lines.append(f"{key} = {format_toml_value(value)}")
         lines.append("")
+    if config.get("eval"):
+        write_toml_lines(lines, "orchestrator.eval", config["eval"])
+        if config.get("eval_sampling"):
+            write_toml_lines(lines, "orchestrator.eval.sampling", config["eval_sampling"])
+        for env_config in config.get("eval_envs", []):
+            lines.append("[[orchestrator.eval.env]]")
+            for key, value in env_config.items():
+                if value is None:
+                    continue
+                lines.append(f"{key} = {format_toml_value(value)}")
+            lines.append("")
     write_toml_lines(lines, "orchestrator.renderer", config["renderer"])
     write_toml_lines(lines, "inference.model", config["inference_model"])
     write_toml_lines(lines, "inference.parallel", config["inference_parallel"])
@@ -288,10 +299,65 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def build_prime_eval_config(args: argparse.Namespace) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[dict[str, Any]]]:
+    if not args.prime_eval_verifiable_dataset_path:
+        return None, None, []
+
+    eval_temperature = args.prime_eval_temperature
+    if eval_temperature is None:
+        eval_temperature = args.prime_temperature
+    eval_top_p = args.prime_eval_top_p
+    if eval_top_p is None:
+        eval_top_p = args.prime_top_p
+    eval_max_completion_tokens = args.prime_eval_max_completion_tokens
+    if eval_max_completion_tokens is None:
+        eval_max_completion_tokens = args.rollout_max_completion_tokens
+
+    eval_sampling_extra_body = parse_extra_json(args.prime_eval_sampling_extra_body)
+    eval_sampling = {
+        "temperature": eval_temperature,
+        "top_p": eval_top_p,
+        "max_completion_tokens": eval_max_completion_tokens,
+        "extra_body": eval_sampling_extra_body,
+    }
+    eval_config = {
+        "interval": args.prime_eval_interval,
+        "num_examples": args.prime_eval_num_examples,
+        "group_size": args.prime_eval_group_size,
+        "skip_first_step": args.prime_eval_skip_first_step,
+    }
+    eval_envs = [
+        {
+            "id": "proof-opd-env",
+            "name": args.prime_eval_name,
+            "num_examples": args.prime_eval_num_examples,
+            "group_size": args.prime_eval_group_size,
+            "interval": args.prime_eval_interval,
+            "args": {
+                "dataset_path": args.prime_eval_verifiable_dataset_path,
+                "dataset_mode": "verifiable",
+                "problem_column": args.prime_eval_problem_column,
+                "solution_column": args.prime_eval_solution_column,
+                "verifiable_answer_column": args.prime_eval_answer_column,
+                "verifiable_eval_mode": True,
+                "enable_meta_verification": args.prime_eval_enable_meta_verification,
+                "num_verifiers": args.prime_eval_num_verifiers,
+                "partial_format_score": args.prime_proof_partial_format_score,
+                "require_closed_think": args.prime_eval_require_closed_think,
+                "refine_rounds": args.prime_eval_refine_rounds,
+                "refine_review_n": args.prime_eval_refine_review_n,
+                "refine_early_stop_reward": args.prime_proof_refine_early_stop_reward,
+            },
+        }
+    ]
+    return eval_config, eval_sampling, eval_envs
+
+
 def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     env_config = build_prime_env_config(args)
     if args.prime_algorithm == "opd" and not args.prime_opd_teacher_model:
         raise ValueError("--prime_opd_teacher_model is required when --prime_algorithm opd")
+    eval_config, eval_sampling, eval_envs = build_prime_eval_config(args)
 
     extra_body = parse_extra_json(args.prime_sampling_extra_body)
     extra_body.setdefault("top_p", args.prime_top_p)
@@ -458,6 +524,9 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
                 "args": env_config["args"],
             }
         ],
+        "eval": eval_config,
+        "eval_sampling": eval_sampling,
+        "eval_envs": eval_envs,
         "renderer": {
             "name": "default",
             "reasoning_parser": args.prime_renderer_reasoning_parser,
@@ -765,6 +834,24 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_proof_refine_review_n", type=int, default=2)
     parser.add_argument("--prime_proof_refine_reward_mode", default="selected", choices=("selected", "best", "final"))
     parser.add_argument("--prime_proof_refine_early_stop_reward", type=float, default=0.95)
+    parser.add_argument("--prime_eval_verifiable_dataset_path", default=None)
+    parser.add_argument("--prime_eval_name", default="proof_math_verifiable")
+    parser.add_argument("--prime_eval_interval", type=int, default=10)
+    parser.add_argument("--prime_eval_num_examples", type=int, default=32)
+    parser.add_argument("--prime_eval_group_size", type=int, default=1)
+    parser.add_argument("--prime_eval_skip_first_step", type=parse_bool, default=False)
+    parser.add_argument("--prime_eval_max_completion_tokens", type=int, default=None)
+    parser.add_argument("--prime_eval_temperature", type=float, default=None)
+    parser.add_argument("--prime_eval_top_p", type=float, default=None)
+    parser.add_argument("--prime_eval_sampling_extra_body", default=None)
+    parser.add_argument("--prime_eval_refine_rounds", type=int, default=0)
+    parser.add_argument("--prime_eval_num_verifiers", type=int, default=1)
+    parser.add_argument("--prime_eval_refine_review_n", type=int, default=1)
+    parser.add_argument("--prime_eval_problem_column", default="auto")
+    parser.add_argument("--prime_eval_solution_column", default="auto")
+    parser.add_argument("--prime_eval_answer_column", default="auto")
+    parser.add_argument("--prime_eval_enable_meta_verification", type=parse_bool, default=True)
+    parser.add_argument("--prime_eval_require_closed_think", type=parse_bool, default=True)
     parser.add_argument("--prime_batch_size", type=int, default=2)
     parser.add_argument("--prime_group_size", type=int, default=2)
     parser.add_argument("--prime_max_inflight_rollouts", type=int, default=None)
@@ -886,6 +973,15 @@ def main(argv: list[str] | None = None) -> int:
     log(f"log_dir={log_dir}")
     env_config = config["train_envs"][0]
     log(f"Prime-RL env id={env_config['id']} name={env_config['name']} args={redacted(env_config['args'])}")
+    for eval_env_config in config.get("eval_envs", []):
+        log(
+            "Prime-RL eval env "
+            f"id={eval_env_config['id']} name={eval_env_config['name']} "
+            f"num_examples={eval_env_config.get('num_examples')} "
+            f"group_size={eval_env_config.get('group_size')} "
+            f"interval={eval_env_config.get('interval')} "
+            f"args={redacted(eval_env_config['args'])}"
+        )
     if config.get("orchestrator_algo"):
         log(f"Prime-RL algorithm config={redacted(config['orchestrator_algo'])}")
     if config.get("orchestrator_algo_teacher"):

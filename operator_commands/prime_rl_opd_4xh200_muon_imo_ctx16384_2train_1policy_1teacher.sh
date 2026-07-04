@@ -6,14 +6,22 @@ export OLMO_RUN_DIR_NAME="${RUN_NAME}"
 
 MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/vol/olmo_train_assets/models/opd-32b-v33-s150/opd-32b-v33-s150}"
 TEACHER_MODEL_PATH="${PRIME_OPD_TEACHER_MODEL_PATH:-/vol/olmo_train_assets/models/dpsk-v4-flash}"
-DATASET_PATH="${PRIME_OPD_DATASET_PATH:-/tmp/submissions-instructions-runtime/imo_data_1959_2024.csv}"
-VERIFIABLE_DATASET_PATH="${PRIME_OPD_VERIFIABLE_DATASET_PATH:-/tmp/submissions-instructions-runtime/astralbench.csv}"
+DATASET_PATH="${PRIME_OPD_DATASET_PATH:-/tmp/aimo-proof-pilot-runtime/imo_data_1959_2024.csv}"
+VERIFIABLE_DATASET_PATH="${PRIME_OPD_VERIFIABLE_DATASET_PATH:-/tmp/aimo-proof-pilot-runtime/astralbench.csv}"
 VERIFIABLE_FRACTION="${PRIME_OPD_VERIFIABLE_FRACTION:-0.20}"
 VERIFIABLE_MIX_SEED="${PRIME_OPD_VERIFIABLE_MIX_SEED:-34521}"
+EVAL_VERIFIABLE_DATASET_PATH="${PRIME_OPD_EVAL_VERIFIABLE_DATASET_PATH:-/tmp/aimo-proof-pilot-runtime/aime_2026.csv}"
+EVAL_INTERVAL="${PRIME_OPD_EVAL_INTERVAL:-10}"
+EVAL_NUM_EXAMPLES="${PRIME_OPD_EVAL_NUM_EXAMPLES:-10}"
+EVAL_GROUP_SIZE="${PRIME_OPD_EVAL_GROUP_SIZE:-1}"
+EVAL_REFINE_ROUNDS="${PRIME_OPD_EVAL_REFINE_ROUNDS:-0}"
+EVAL_NUM_VERIFIERS="${PRIME_OPD_EVAL_NUM_VERIFIERS:-1}"
+EVAL_REFINE_REVIEW_N="${PRIME_OPD_EVAL_REFINE_REVIEW_N:-1}"
 PROOF_MAX_EXAMPLES="${PRIME_PROOF_MAX_EXAMPLES:-0}"
 CTX_LEN="${PRIME_OPD_CTX_LEN:-20480}"
 VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-${PRIME_VLLM_MAX_MODEL_LEN:-40960}}"
 COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-20480}"
+EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-${COMPLETION_TOKENS}}"
 BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-16384}"
 TEACHER_GPU_MEMORY_UTILIZATION="${PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION:-0.90}"
 TEACHER_MAX_NUM_SEQS="${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-8}"
@@ -52,6 +60,8 @@ echo "[prime-opd] run_name=${RUN_NAME}"
 echo "[prime-opd] proof_dataset=${DATASET_PATH}"
 echo "[prime-opd] verifiable_dataset=${VERIFIABLE_DATASET_PATH}"
 echo "[prime-opd] verifiable_fraction=${VERIFIABLE_FRACTION} mix_seed=${VERIFIABLE_MIX_SEED}"
+echo "[prime-opd] eval_verifiable_dataset=${EVAL_VERIFIABLE_DATASET_PATH}"
+echo "[prime-opd] eval_interval=${EVAL_INTERVAL} eval_examples=${EVAL_NUM_EXAMPLES} eval_group_size=${EVAL_GROUP_SIZE} eval_refine_rounds=${EVAL_REFINE_ROUNDS}"
 echo "[prime-opd] max_examples=${PROOF_MAX_EXAMPLES} ctx=${CTX_LEN} rollout_max_completion=${COMPLETION_TOKENS}"
 echo "[prime-opd] gpu_layout train=${TRAIN_GPUS} infer=${INFER_GPUS} teacher=${TEACHER_GPU_IDS} gpus_per_node=${GPUS_PER_NODE}"
 echo "[prime-opd] vllm policy_tp=${POLICY_TP} policy_dp=${POLICY_DP} teacher_tp=${TEACHER_TP} teacher_dp=${TEACHER_DP}"
@@ -110,6 +120,15 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
   --prime_proof_max_examples "${PROOF_MAX_EXAMPLES}" \
   --prime_proof_num_verifiers "${PROOF_NUM_VERIFIERS}" \
   --prime_proof_refine_review_n "${PROOF_REFINE_REVIEW_N}" \
+  --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}" \
+  --prime_eval_interval "${EVAL_INTERVAL}" \
+  --prime_eval_num_examples "${EVAL_NUM_EXAMPLES}" \
+  --prime_eval_group_size "${EVAL_GROUP_SIZE}" \
+  --prime_eval_max_completion_tokens "${EVAL_COMPLETION_TOKENS}" \
+  --prime_eval_refine_rounds "${EVAL_REFINE_ROUNDS}" \
+  --prime_eval_num_verifiers "${EVAL_NUM_VERIFIERS}" \
+  --prime_eval_refine_review_n "${EVAL_REFINE_REVIEW_N}" \
+  --prime_eval_answer_column auto \
   --prime_batch_size "${BATCH_SIZE}" \
   --prime_group_size "${GROUP_SIZE}" \
   --prime_max_inflight_rollouts "${MAX_INFLIGHT_ROLLOUTS}" \

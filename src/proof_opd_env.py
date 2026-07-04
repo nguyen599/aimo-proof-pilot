@@ -874,6 +874,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         refine_rounds: int = 1,
         num_verifiers: int = 4,
         refine_review_n: int = 2,
+        verifiable_eval_mode: bool = False,
         enable_meta_verification: bool = True,
         partial_format_score: float = 0.7,
         refine_early_stop_reward: float = 0.95,
@@ -883,6 +884,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         self.refine_rounds = max(0, int(refine_rounds))
         self.num_verifiers = max(1, int(num_verifiers))
         self.refine_review_n = max(1, int(refine_review_n))
+        self.verifiable_eval_mode = bool(verifiable_eval_mode)
         self.enable_meta_verification = bool(enable_meta_verification)
         self.partial_format_score = clamp01(float(partial_format_score))
         self.refine_early_stop_reward = clamp01(float(refine_early_stop_reward))
@@ -1143,6 +1145,53 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "self_evaluation": parsed.get("self_evaluation", ""),
         }
 
+    def _generation_eval_payload(
+        self,
+        state: vf.State,
+        parsed: dict[str, Any],
+        round_idx: int,
+        *,
+        is_truncated: bool = False,
+        finish_reason: str = "",
+    ) -> dict[str, Any]:
+        payload = {
+            "round_index": round_idx,
+            "selected_round_index": round_idx,
+            "reward": 0.0,
+            "format_score": self._format_score(parsed),
+            "format_ok": parsed.get("format_ok", False),
+            "proof_score": None,
+            "meta_score": None,
+            "num_verifiers": 0,
+            "num_verifier_results": 0,
+            "valid_verifier_count": 0,
+            "valid_meta_count": 0,
+            "verifier_reward_terms": [],
+            "verifier_meta_reward": 0.0,
+            "verifier_results": [],
+            "self_score": parsed.get("self_score"),
+            "proof_chars": len(str(parsed.get("proof") or "")),
+            "self_evaluation_chars": len(str(parsed.get("self_evaluation") or "")),
+            "verifier_evaluation_chars": 0,
+            "meta_analysis_chars": 0,
+            "closed_thinking": parsed.get("closed_thinking", False),
+            "is_truncated": is_truncated,
+            "finish_reason": finish_reason,
+            "reason": "verifiable_eval_generation_only",
+            "generation_raw_output": parsed.get("raw_output", ""),
+            "proof": parsed.get("proof", ""),
+            "self_evaluation": parsed.get("self_evaluation", ""),
+            "verifier_evaluation": "",
+            "verifier_invalid_reason": "",
+            "meta_analysis": "",
+            "meta_invalid_reason": "",
+            "stage_records": list(state.get("proof_opd_stage_records") or []),
+        }
+        self._attach_verifiable_metrics(state, payload, parsed)
+        verifiable_accuracy = float(payload.get("verifiable_accuracy", 0.0) or 0.0)
+        payload["reward"] = max(0.0, verifiable_accuracy)
+        return payload
+
     def _record_stage(
         self,
         state: vf.State,
@@ -1234,6 +1283,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
 
     def _should_refine(self, state: vf.State, payload: dict[str, Any]) -> bool:
         rounds = state.get("proof_opd_rounds") or []
+        if self.verifiable_eval_mode:
+            return len(rounds) <= self.refine_rounds
         if len(rounds) > self.refine_rounds:
             return False
         return float(payload.get("reward", 0.0) or 0.0) < self.refine_early_stop_reward
@@ -1304,6 +1355,18 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 state.setdefault("proof_opd_rounds", []).append(payload)
                 state["proof_opd_reward_payload"] = payload
                 LOGGER.info("Proof-OPD invalid generation: %s", json.dumps(payload, ensure_ascii=False))
+                return self._stop(state)
+            if self.verifiable_eval_mode and round_idx >= self.refine_rounds:
+                payload = self._generation_eval_payload(
+                    state,
+                    parsed,
+                    round_idx,
+                    is_truncated=is_truncated,
+                    finish_reason=finish_reason,
+                )
+                state.setdefault("proof_opd_rounds", []).append(payload)
+                state["proof_opd_reward_payload"] = payload
+                LOGGER.info("Proof-OPD verifiable eval generation scored: %s", json.dumps(payload, ensure_ascii=False)[:4000])
                 return self._stop(state)
             return self._start_verification_round(state)
 
@@ -1450,12 +1513,14 @@ def load_environment(
     problem_column: str = "auto",
     solution_column: str = "auto",
     max_examples: int | None = None,
+    dataset_mode: str = "mixed",
     verifiable_dataset_path: str | None = None,
     verifiable_fraction: float = 0.2,
     verifiable_answer_column: str = "auto",
     mix_seed: int = DEFAULT_MIX_SEED,
     enable_meta_verification: bool | str = True,
     num_verifiers: int = 4,
+    verifiable_eval_mode: bool | str = False,
     partial_format_score: float = 0.7,
     require_closed_think: bool | str = True,
     refine_rounds: int = 1,
@@ -1464,22 +1529,36 @@ def load_environment(
     **_: Any,
 ) -> vf.Environment:
     proof_rows = read_dataset_rows(dataset_path)
-    verifiable_rows = read_dataset_rows(verifiable_dataset_path) if verifiable_dataset_path else None
-    rows = normalize_mixed_dataset_rows(
-        proof_rows,
-        problem_column=problem_column,
-        solution_column=solution_column,
-        max_examples=max_examples,
-        verifiable_rows=verifiable_rows,
-        verifiable_fraction=float(verifiable_fraction),
-        verifiable_answer_column=verifiable_answer_column,
-        mix_seed=int(mix_seed),
-    )
+    normalized_mode = str(dataset_mode or "mixed").strip().lower()
+    if normalized_mode in {"verifiable", "verifiable_eval", "eval_verifiable"}:
+        rows = normalize_dataset_rows(
+            proof_rows,
+            problem_column=problem_column,
+            solution_column=solution_column,
+            max_examples=max_examples,
+            task_type="verifiable",
+            answer_column=verifiable_answer_column,
+            dataset_label="proof_math_verifiable",
+        )
+        verifiable_eval_mode = True if verifiable_eval_mode is False else verifiable_eval_mode
+    else:
+        verifiable_rows = read_dataset_rows(verifiable_dataset_path) if verifiable_dataset_path else None
+        rows = normalize_mixed_dataset_rows(
+            proof_rows,
+            problem_column=problem_column,
+            solution_column=solution_column,
+            max_examples=max_examples,
+            verifiable_rows=verifiable_rows,
+            verifiable_fraction=float(verifiable_fraction),
+            verifiable_answer_column=verifiable_answer_column,
+            mix_seed=int(mix_seed),
+        )
     task_counts: dict[str, int] = {}
     for row in rows:
         task_counts[str(row.get("task_type") or "proof")] = task_counts.get(str(row.get("task_type") or "proof"), 0) + 1
     LOGGER.info(
-        "Loaded Proof-OPD dataset: proof_path=%s verifiable_path=%s rows=%d task_counts=%s",
+        "Loaded Proof-OPD dataset: mode=%s proof_path=%s verifiable_path=%s rows=%d task_counts=%s",
+        normalized_mode,
         dataset_path,
         verifiable_dataset_path,
         len(rows),
@@ -1494,6 +1573,7 @@ def load_environment(
         refine_rounds=int(refine_rounds),
         num_verifiers=int(num_verifiers),
         refine_review_n=int(refine_review_n),
+        verifiable_eval_mode=parse_bool(verifiable_eval_mode, False),
         enable_meta_verification=parse_bool(enable_meta_verification, True),
         partial_format_score=float(partial_format_score),
         require_closed_think=parse_bool(require_closed_think, True),

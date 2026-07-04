@@ -55,10 +55,13 @@ Default topology:
 Default data mix:
 
 - `imo_data_1959_2024.csv` supplies proof-only tasks.
-- `astralbench.csv` supplies verifiable tasks.
-- `PRIME_OPD_VERIFIABLE_DATASET_PATH` selects the verifiable CSV, defaulting to `/workspace/aimo-proof-pilot/astralbench.csv`.
+- `astralbench.csv` supplies verifiable tasks mixed into training.
+- `aime_2026.csv` supplies the separate verifiable eval set.
+- `PRIME_OPD_VERIFIABLE_DATASET_PATH` selects the training-mix verifiable CSV, defaulting to `/tmp/aimo-proof-pilot-runtime/astralbench.csv` in the packaged launch script.
+- `PRIME_OPD_EVAL_VERIFIABLE_DATASET_PATH` selects the eval CSV, defaulting to `/tmp/aimo-proof-pilot-runtime/aime_2026.csv`.
 - `PRIME_OPD_VERIFIABLE_FRACTION=0.20` mixes 20% verifiable rows into the train environment.
 - `PRIME_OPD_VERIFIABLE_MIX_SEED=34521` makes the mixed proof/verifiable ordering reproducible.
+- `PRIME_OPD_EVAL_INTERVAL=10` runs eval every 10 steps. Eval metrics appear under `eval/proof_math_verifiable/...` in W&B.
 - `PRIME_PROOF_MAX_EXAMPLES=20` keeps the default launch cheap. Increase it for real runs, for example `PRIME_PROOF_MAX_EXAMPLES=1481`.
 
 Example container-style launch:
@@ -68,6 +71,8 @@ export PRIME_OPD_MODEL_PATH=/vol/olmo_train_assets/models/opd-32b-deploy/opd-32b
 export PRIME_OPD_TEACHER_MODEL_PATH="$PRIME_OPD_MODEL_PATH"
 export PRIME_OPD_DATASET_PATH=/workspace/aimo-proof-pilot/imo_data_1959_2024.csv
 export PRIME_OPD_VERIFIABLE_DATASET_PATH=/workspace/aimo-proof-pilot/astralbench.csv
+export PRIME_OPD_EVAL_VERIFIABLE_DATASET_PATH=/workspace/aimo-proof-pilot/aime_2026.csv
+export PRIME_OPD_EVAL_INTERVAL=10
 export PRIME_OPD_VERIFIABLE_FRACTION=0.20
 export PRIME_OPD_VERIFIABLE_MIX_SEED=34521
 export PRIME_PROOF_MAX_EXAMPLES=1481
