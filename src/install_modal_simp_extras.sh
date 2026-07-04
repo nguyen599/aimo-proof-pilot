@@ -12,9 +12,11 @@ FLASHINFER_INDEX_URL="${FLASHINFER_INDEX_URL:-https://flashinfer.ai/whl/cu130}"
 FLASH_ATTN_WHEEL_URL="${FLASH_ATTN_WHEEL_URL:-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu130torch2.11-cp312-cp312-linux_x86_64.whl}"
 FLASH_ATTN_3_WHEEL_URL="${FLASH_ATTN_3_WHEEL_URL:-https://github.com/windreamer/flash-attention3-wheels/releases/download/2026.05.11-5e0e3b1/flash_attn_3-3.0.0+20260511.cu130torch2110cxx11abitrue.ab6632-cp39-abi3-linux_x86_64.whl}"
 FLASH_ATTN_4_WHEEL_URL="${FLASH_ATTN_4_WHEEL_URL:-https://github.com/Dao-AILab/flash-attention/releases/download/fa4-v4.0.0.beta15/flash_attn_4-4.0.0b15-py3-none-any.whl}"
-VLLM_WHEEL_URL="${VLLM_WHEEL_URL:-https://wheels.vllm.ai/f5a8d73377d0f0a4e00cba172f9fbd0d50471b07/vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl}"
+# Stable vLLM 0.24.0 release wheel (what prime-rl@main pins) instead of a wheels.vllm.ai nightly, so
+# the baked build matches the runtime fetch rather than being a throwaway artifact overwritten at launch.
+VLLM_WHEEL_URL="${VLLM_WHEEL_URL:-https://github.com/vllm-project/vllm/releases/download/v0.24.0/vllm-0.24.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl}"
 TVM_FFI_SPEC="${TVM_FFI_SPEC:-apache-tvm-ffi<0.1.12}"
-NVIDIA_CUTLASS_DSL_SPEC="${NVIDIA_CUTLASS_DSL_SPEC:-nvidia-cutlass-dsl[cu13]==4.4.2}"
+NVIDIA_CUTLASS_DSL_SPEC="${NVIDIA_CUTLASS_DSL_SPEC:-nvidia-cutlass-dsl[cu13]==4.5.2}"
 PREBUILT_WHEELS_DIR="${PREBUILT_WHEELS_DIR:-torch2.11+cu130}"
 TRANSFORMER_ENGINE_WHEEL_REPO="nguyen599/prebuild-wheels-util"
 TRANSFORMER_ENGINE_WHEEL_FILE="${TRANSFORMER_ENGINE_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl}"
@@ -511,6 +513,16 @@ if python_dist_ok nvidia-nccl-cu13 2.29.3; then
     echo "Skipping nvidia-nccl-cu13 install; version 2.29.3 is already installed."
 else
     uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
+fi
+
+# Re-pin nvidia-cutlass-dsl to vLLM's own ==4.5.2 LAST. flashinfer / quack / flash-attn-4 pull it
+# forward to 4.6.0 via `>=`, but 4.6.0 dropped `cute.core.ThrMma`, which breaks flash_attn.cute,
+# QuACK, AND Transformer Engine at import. Re-pinning here (after every consumer is installed, and
+# after the nccl re-pin) restores 4.5.2 and still satisfies all their `>=` bounds.
+if python_dist_ok nvidia-cutlass-dsl 4.5.2; then
+    echo "Skipping nvidia-cutlass-dsl re-pin; version 4.5.2 is already installed."
+else
+    uv pip install --system --no-cache-dir "nvidia-cutlass-dsl[cu13]==4.5.2"
 fi
 
 verify_modules=(flash_attn flashinfer vllm)
