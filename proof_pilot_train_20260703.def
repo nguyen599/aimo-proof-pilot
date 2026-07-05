@@ -121,7 +121,7 @@ From: chankhavu/aimo-proof-pilot:v4
     if [ -f /app/remote-shell/daemon/requirements.txt ]; then
         rm -rf /opt/venv-daemon
         uv venv /opt/venv-daemon
-        uv pip install --python /opt/venv-daemon/bin/python --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
+        uv pip install --python /opt/venv-daemon/bin/python3 --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
     fi
 
     cat > /app/entrypoint.sh <<'EOF'
@@ -144,7 +144,7 @@ if [ -f /app/smoke_test_opd.py ]; then
 fi
 while :; do
     announce "RUNNING (daemon (re)starting)"
-    /opt/venv-daemon/bin/python /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
+    /opt/venv-daemon/bin/python3 /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
     printf '[supervisor %s] daemon exited - restart in 5s\n' "$(date -u '+%F %T' 2>/dev/null)" | tee -a "$LOG"
     sleep 5 2>/dev/null || true
 done
