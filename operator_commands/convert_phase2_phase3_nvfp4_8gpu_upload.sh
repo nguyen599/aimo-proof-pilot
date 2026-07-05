@@ -7,18 +7,16 @@ if [ "${NODE_LABEL}" != "0" ]; then
   exit 0
 fi
 
-GITHUB_TOKEN_VALUE="${GITHUB_TOKEN_VALUE:-${GITHUB_TOKEN:-}}"
 export GIT_TERMINAL_PROMPT=0
 export GIT_LFS_SKIP_SMUDGE=1
-if [ -n "${GITHUB_TOKEN_VALUE}" ]; then
+if [ -n "${GITHUB_TOKEN:-}" ]; then
   export GIT_CONFIG_COUNT=1
-  export GIT_CONFIG_KEY_0="url.https://${GITHUB_TOKEN_VALUE}@github.com/.insteadOf"
+  export GIT_CONFIG_KEY_0="url.https://${GITHUB_TOKEN}@github.com/.insteadOf"
   export GIT_CONFIG_VALUE_0="https://github.com/"
 else
   export GIT_CONFIG_COUNT=0
 fi
 
-export HF_TOKEN="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
 export HF_HUB_ENABLE_HF_TRANSFER=0
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export MODEL_OPT_SITE="/tmp/modelopt_site"
@@ -271,7 +269,7 @@ targets = [
     "checkpoints/imo1959_2024_grpo_step1100hf_long4x8_vllm020_vllm080_cpuadam_5c84b85/cmd_2812a6de5075c2d3/step15-hf-nvfp4",
     *[f"checkpoints/phase2_32b_tp8_pp3_seq65536/step{step}-hf-nvfp4" for step in [400, 500, 600, 700, 800, 900, 1000]],
 ]
-token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+token = os.environ.get("HF_TOKEN")
 api = HfApi(token=token)
 
 for label, export_path_s, repo_id, target in zip(labels, export_paths, repos, targets):

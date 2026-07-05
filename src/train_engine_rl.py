@@ -18,8 +18,6 @@ from urllib.request import urlopen
 
 
 TRUTHY = {"1", "true", "yes", "on"}
-DEFAULT_RUNTIME_HF_TOKEN = "hf_"+"oHZSXoLrEhnnsivWxHiJmmRqYdIFzGdxrs"
-DEFAULT_RUNTIME_WANDB_API_KEY = "wandb_v1_" + "WILFlS8EzxJ5neGkElKhNLDwLxA_IMFvHcvPFqfZNAAuXAUsM2PT1uDtB2JL6ctq3lhBj9w2SfYpN"
 
 
 def parse_bool(value: str | bool | None, default: bool = False) -> bool:
@@ -76,21 +74,8 @@ def get_wandb_api_key_from_netrc() -> str | None:
 
 def apply_runtime_auth_defaults() -> list[str]:
     configured: list[str] = []
-    hf_token = (
-        os.environ.get("HF_TOKEN")
-        or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        or os.environ.get("HF_HUB_TOKEN")
-        or DEFAULT_RUNTIME_HF_TOKEN
-    )
-    if hf_token:
-        for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HF_HUB_TOKEN"):
-            if not os.environ.get(key):
-                os.environ[key] = hf_token
-        if hf_token == DEFAULT_RUNTIME_HF_TOKEN:
-            configured.append("hf")
-
     if not os.environ.get("WANDB_API_KEY"):
-        wandb_key = get_wandb_api_key_from_netrc() or DEFAULT_RUNTIME_WANDB_API_KEY
+        wandb_key = get_wandb_api_key_from_netrc()
         if wandb_key:
             os.environ["WANDB_API_KEY"] = wandb_key
             configured.append("wandb")

@@ -3343,12 +3343,7 @@ def download_hf_model_snapshot(
             "import os, sys\n"
             "from huggingface_hub import snapshot_download\n"
             "repo_id, local_dir, cache_dir = sys.argv[1:4]\n"
-            "token = (\n"
-            "    os.environ.get('HF_TOKEN')\n"
-            "    or os.environ.get('HUGGING_FACE_HUB_TOKEN')\n"
-            "    or os.environ.get('HUGGINGFACE_HUB_TOKEN')\n"
-            "    or None\n"
-            ")\n"
+            "token = os.environ.get('HF_TOKEN') or None\n"
             "snapshot_download(repo_id=repo_id, local_dir=local_dir, cache_dir=cache_dir or None, token=token)\n"
         )
         command = [sys.executable, "-c", code, repo_id, str(model_path), cache_path]

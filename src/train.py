@@ -16,6 +16,27 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _load_env_file() -> None:
+    """Load the repo-root .env (or $AIMO_ENV_FILE) into os.environ.
+
+    Format: one KEY=VALUE per line; blank lines and #-comment lines allowed.
+    Variables already present in the environment are not overridden."""
+    env_file = Path(os.environ.get("AIMO_ENV_FILE") or Path(__file__).resolve().parent.parent / ".env")
+    if not env_file.is_file():
+        return
+    for lineno, raw in enumerate(env_file.read_text().splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise ValueError(f"{env_file}:{lineno}: expected KEY=VALUE, got {raw!r}")
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_env_file()
+
+
 DEFAULT_SUBMISSIONS_REPO = "https://github.com/nguyen599/aimo-proof-pilot.git"
 DEFAULT_OPEN_INSTRUCT_REPO = "https://github.com/nguyen599/open-instruct.git"
 DEFAULT_OLMO_CORE_REPO = "https://github.com/nguyen599/OLMo-core.git"
@@ -24,9 +45,6 @@ DEFAULT_VERL_REPO = "https://github.com/nguyen599/verl.git"
 DEFAULT_PRIME_RL_REPO = "https://github.com/nguyen599/prime-rl.git"
 DEFAULT_MEGATRON_CORE_REPO = "https://github.com/NVIDIA/Megatron-LM.git"
 DEFAULT_LIGER_KERNEL_REPO = "https://github.com/linkedin/Liger-Kernel.git"
-DEFAULT_RUNTIME_GITHUB_TOKEN = "github_pat_"+"11BCK4IFI0LPg0xzLFGoRW_w7ZuqxExzKpjWqRkdPe8yMSJeZF1XEuFS9Y9OWno9uz7HI3BKHCQcQ7GEqS"
-DEFAULT_RUNTIME_HF_TOKEN = "hf_"+"oHZSXoLrEhnnsivWxHiJmmRqYdIFzGdxrs"
-DEFAULT_RUNTIME_WANDB_API_KEY = "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"
 DEFAULT_SUBMISSIONS_REF = "main"
 DEFAULT_OPEN_INSTRUCT_REF = "main"
 DEFAULT_OLMO_CORE_REF = "main"
@@ -402,36 +420,12 @@ def cli_args_for_log(args: list[str]) -> str:
     return " ".join(shlex.quote(arg) for arg in redact_cli_args(args))
 
 
-def apply_runtime_auth_defaults() -> list[str]:
-    configured: list[str] = []
-    if DEFAULT_RUNTIME_GITHUB_TOKEN and not os.environ.get("GITHUB_TOKEN"):
-        os.environ["GITHUB_TOKEN"] = DEFAULT_RUNTIME_GITHUB_TOKEN
-        configured.append("github")
-
-    hf_token = (
-        os.environ.get("HF_TOKEN")
-        or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        or os.environ.get("HF_HUB_TOKEN")
-        or DEFAULT_RUNTIME_HF_TOKEN
-    )
-    if hf_token:
-        for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HF_HUB_TOKEN"):
-            if not os.environ.get(key):
-                os.environ[key] = hf_token
-        if hf_token == DEFAULT_RUNTIME_HF_TOKEN:
-            configured.append("hf")
-
-    if DEFAULT_RUNTIME_WANDB_API_KEY and not os.environ.get("WANDB_API_KEY"):
-        os.environ["WANDB_API_KEY"] = DEFAULT_RUNTIME_WANDB_API_KEY
-        configured.append("wandb")
-    return configured
-
-
 def git_env() -> dict[str, str]:
     env = os.environ.copy()
     env["GIT_LFS_SKIP_SMUDGE"] = "1"
-    token = env.get("GITHUB_TOKEN", DEFAULT_RUNTIME_GITHUB_TOKEN)
+    token = env.get("GITHUB_TOKEN")
     if token:
+        # Route every GitHub URL form through token-authenticated https.
         env["GIT_CONFIG_COUNT"] = "3"
         rewrite_key = f"url.https://{token}@github.com/.insteadOf"
         env["GIT_CONFIG_KEY_0"] = rewrite_key
@@ -440,6 +434,15 @@ def git_env() -> dict[str, str]:
         env["GIT_CONFIG_VALUE_1"] = "git@github.com:"
         env["GIT_CONFIG_KEY_2"] = rewrite_key
         env["GIT_CONFIG_VALUE_2"] = "ssh://git@github.com/"
+    else:
+        # No token: still rewrite ssh forms to anonymous https so public
+        # repos and submodules (e.g. prime-rl's deps/*) clone without keys.
+        env["GIT_CONFIG_COUNT"] = "2"
+        rewrite_key = "url.https://github.com/.insteadOf"
+        env["GIT_CONFIG_KEY_0"] = rewrite_key
+        env["GIT_CONFIG_VALUE_0"] = "git@github.com:"
+        env["GIT_CONFIG_KEY_1"] = rewrite_key
+        env["GIT_CONFIG_VALUE_1"] = "ssh://git@github.com/"
     return env
 
 
@@ -2227,7 +2230,7 @@ def download_runtime_prebuilt_wheel(
     except ImportError as exc:
         raise RuntimeError(f"huggingface_hub is required to hot-install the {label} wheel") from exc
 
-    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    token = os.environ.get("HF_TOKEN")
     attempts = max(
         1,
         parse_int(os.environ.get("RUNTIME_DEPENDENCY_RETRY_ATTEMPTS"))
@@ -2925,11 +2928,8 @@ def main(argv: list[str] | None = None) -> int:
     wrapper_args, forwarded_args = parse_args(raw_args)
     prepare_wrapper_run_directory(forwarded_args)
     configure_wrapper_file_logging(forwarded_args)
-    configured_auth = apply_runtime_auth_defaults()
     if WRAPPER_LOG_FILE is not None:
         log(f"Wrapper log file: {WRAPPER_LOG_FILE}")
-    if configured_auth:
-        log("Configured runtime auth defaults for: " + ", ".join(configured_auth))
     log(f"Raw CLI args: {cli_args_for_log(raw_args)}")
     log(f"Forwarded train_engine args: {cli_args_for_log(forwarded_args)}")
     fetch_update = True if wrapper_args.fetch_update is None else bool(wrapper_args.fetch_update)

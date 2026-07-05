@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Load repo-root .env (copy .env.example and fill in) so one file configures the
+# whole run. Note: sourcing overrides already-exported variables of the same name.
+ENV_FILE="${AIMO_ENV_FILE:-$(cd "$(dirname "$0")/.." && pwd)/.env}"
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  . "${ENV_FILE}"
+  set +a
+fi
+
 RUN_NAME="${OLMO_RUN_DIR_NAME:-prime_rl_opd_muon_imo_mixed_ctx20480_4gpu_2train_1policy_1teacher_$(date -u +%Y%m%d_%H%M%S)}"
 export OLMO_RUN_DIR_NAME="${RUN_NAME}"
 
@@ -73,8 +82,8 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
 
 /usr/bin/python /app/train.py \
   --fetch-update \
-  --submissions-ref main \
-  --prime-rl-ref main \
+  --submissions-ref "${SUBMISSIONS_REF:-main}" \
+  --prime-rl-ref "${PRIME_RL_REF:-main}" \
   --runtime-fetch-state-dir "/tmp/train-runtime-fetch-${RUN_NAME}" \
   --runtime-training-deps-dir "/tmp/olmo-train-runtime-deps-prime-rl-opd-${RUN_NAME}" \
   --backend prime_rl \
