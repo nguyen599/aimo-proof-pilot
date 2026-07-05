@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: pytorch/pytorch:2.11.0-cuda13.0-cudnn9-devel
+From: chankhavu/aimo-proof-pilot:v4
 
 %environment
     export SUBMISSIONS_REPO=https://github.com/nguyen599/aimo-proof-pilot.git

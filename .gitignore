@@ -13,6 +13,7 @@ artifacts/
 latex/
 environ*
 # operator_commands/*
+src/proof_opd_env/outputs/*
 *.sif
 *.parquet
 wandb/

@@ -5,7 +5,7 @@ tags = ["proof", "llm", "math"]
 version = "0.1.0"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "git+https://github.com/PrimeIntellect-ai/verifiers.git",
+    "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers.git",
     "datasets",
     "openai"
 ]
@@ -13,6 +13,9 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build]
 include = ["proof_opd_env.py"]
