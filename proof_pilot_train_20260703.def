@@ -61,8 +61,8 @@ From: chankhavu/aimo-proof-pilot:v4
 %post
     export DEBIAN_FRONTEND=noninteractive
     export GIT_LFS_SKIP_SMUDGE=1
-    export SUBMISSION_REPO="${SUBMISSION_REPO:-${SUBMISSIONS_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}}"
-    export SUBMISSION_REF="${SUBMISSION_REF:-${SUBMISSIONS_REF:-main}}"
+    export SUBMISSION_REPO="${SIF_SUBMISSION_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}"
+    export SUBMISSION_REF="${SIF_SUBMISSION_REF:-main}"
     export SUBMISSIONS_REPO="${SUBMISSION_REPO}"
     export SUBMISSIONS_REF="${SUBMISSION_REF}"
     export SUBMISSION_DIR="${SUBMISSION_DIR:-/workspace/aimo-proof-pilot}"
@@ -114,7 +114,9 @@ From: chankhavu/aimo-proof-pilot:v4
         python -m pip install --no-cache-dir --upgrade uv
     fi
     if [ -f /app/remote-shell/daemon/requirements.txt ]; then
-        uv venv /opt/venv-daemon
+        if [ ! -x /opt/venv-daemon/bin/python ]; then
+            uv venv /opt/venv-daemon
+        fi
         uv pip install --python /opt/venv-daemon/bin/python --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
     fi
 
