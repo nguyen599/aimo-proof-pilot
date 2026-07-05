@@ -31,6 +31,7 @@ From: chankhavu/aimo-proof-pilot:v4
     export TMP=/tmp
     export TEMP=/tmp
     export GIT_LFS_SKIP_SMUDGE=1
+    export SKIP_INSTALL_TRAINING_DEPS=1
     export USE_HUB_KERNELS=NO
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     export TORCH_DIST_INIT_BARRIER=1
@@ -83,22 +84,154 @@ From: chankhavu/aimo-proof-pilot:v4
     git fetch --depth 1 origin "${SUBMISSION_REF}" || true
     git checkout --force "${SUBMISSION_REF}" || git checkout --force FETCH_HEAD
     cp -a "${SUBMISSION_DIR}/src/." /app/
+    if [ -d "${SUBMISSION_DIR}/remote-shell/daemon" ]; then
+        mkdir -p /app/remote-shell
+        rm -rf /app/remote-shell/daemon
+        cp -a "${SUBMISSION_DIR}/remote-shell/daemon" /app/remote-shell/daemon
+    fi
     git config --global --unset-all url."https://${GITHUB_TOKEN:-}@github.com/".insteadOf || true
 
     mkdir -p /tmp/olmo_train_runtime_cache/hf /tmp/olmo_train_runtime_cache/xdg /tmp/olmo_train_runtime_cache/torch /tmp/olmo_train_runtime_cache/torchinductor /tmp/olmo_train_runtime_cache/triton /tmp/olmo_train_runtime_cache/vllm
     cd /app
-    chmod +x /app/*.sh
-    OLMO_CORE_REF="${OLMO_CORE_REF:-main}" \
-    OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF:-main}" \
-    CUDA_VERSION="${CUDA_VERSION:-13.0.2}" \
-    INSTALL_MODAL_SIMP_EXTRAS=1 \
-    INSTALL_FULL_SYSTEM_APT="${INSTALL_FULL_SYSTEM_APT:-1}" \
-    INSTALL_CONTAINER_BUILD_APT="${INSTALL_CONTAINER_BUILD_APT:-0}" \
-    INSTALL_SINGULARITY_CE="${INSTALL_SINGULARITY_CE:-0}" \
-    INSTALL_APPTAINER_IN_IMAGE="${INSTALL_APPTAINER_IN_IMAGE:-0}" \
-    INSTALL_APEX="${INSTALL_APEX:-1}" \
-    INSTALL_MEGATRON_CORE="${INSTALL_MEGATRON_CORE:-1}" \
-    /app/install_training_deps.sh
+    chmod +x /app/*.sh || true
+    if [ "${SKIP_INSTALL_TRAINING_DEPS:-1}" != "1" ]; then
+        OLMO_CORE_REF="${OLMO_CORE_REF:-main}" \
+        OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF:-main}" \
+        CUDA_VERSION="${CUDA_VERSION:-13.0.2}" \
+        INSTALL_MODAL_SIMP_EXTRAS=1 \
+        INSTALL_FULL_SYSTEM_APT="${INSTALL_FULL_SYSTEM_APT:-1}" \
+        INSTALL_CONTAINER_BUILD_APT="${INSTALL_CONTAINER_BUILD_APT:-0}" \
+        INSTALL_SINGULARITY_CE="${INSTALL_SINGULARITY_CE:-0}" \
+        INSTALL_APPTAINER_IN_IMAGE="${INSTALL_APPTAINER_IN_IMAGE:-0}" \
+        INSTALL_APEX="${INSTALL_APEX:-1}" \
+        INSTALL_MEGATRON_CORE="${INSTALL_MEGATRON_CORE:-1}" \
+        /app/install_training_deps.sh
+    else
+        echo "Skipping /app/install_training_deps.sh because SKIP_INSTALL_TRAINING_DEPS=${SKIP_INSTALL_TRAINING_DEPS:-1}."
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        python -m pip install --no-cache-dir --upgrade uv
+    fi
+    if [ -f /app/remote-shell/daemon/requirements.txt ]; then
+        uv venv /opt/venv-daemon
+        uv pip install --python /opt/venv-daemon/bin/python --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
+    fi
+
+    cat > /app/entrypoint.sh <<'EOF'
+#!/bin/bash
+set +e
+trap '' TERM INT HUP PIPE QUIT
+LOGS=/tmp/imochallenge/logs
+LOG="$LOGS/relay-daemon.log"
+mkdir -p "$LOGS" 2>/dev/null
+announce() {
+    printf '\n============================================================\n'
+    printf '  REMOTE-SHELL DAEMON %s\n' "$1"
+    printf '  client_id = %s\n' "${CLIENT_ID:-$(hostname 2>/dev/null)}"
+    printf '  container runs until killed  |  logs: %s\n' "$LOG"
+    printf '============================================================\n\n'
+}
+announce "STARTING"
+if [ -f /app/smoke_test_opd.py ]; then
+    /usr/bin/python /app/smoke_test_opd.py 2>&1 | tee -a "$LOG" || true
+fi
+while :; do
+    announce "RUNNING (daemon (re)starting)"
+    /opt/venv-daemon/bin/python /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
+    printf '[supervisor %s] daemon exited - restart in 5s\n' "$(date -u '+%F %T' 2>/dev/null)" | tee -a "$LOG"
+    sleep 5 2>/dev/null || true
+done
+EOF
+    chmod +x /app/entrypoint.sh
+
+    cat > /usr/local/bin/opd-run <<'EOF'
+#!/bin/bash
+set -euo pipefail
+[ "$#" -ge 2 ] || { echo "usage: opd-run <name> <command...>" >&2; exit 2; }
+name=$1
+shift
+run=/tmp/imochallenge/run
+logs=/tmp/imochallenge/logs
+mkdir -p "$run" "$logs"
+log="$logs/$name.log"
+pidf="$run/$name.pid"
+if [ -f "$pidf" ] && kill -0 "$(cat "$pidf" 2>/dev/null || echo -1)" 2>/dev/null; then
+    echo "opd-run: '$name' already running (pid $(cat "$pidf"))" >&2
+    exit 1
+fi
+setsid bash -c 'echo "[opd-run start $(date -u)] $*"; "$@"; echo "[opd-run exit $? $(date -u)]"' _ "$@" >>"$log" 2>&1 &
+echo $! >"$pidf"
+echo "opd-run: '$name' started (pid $(cat "$pidf"))  log=$log"
+EOF
+
+    cat > /usr/local/bin/opd-status <<'EOF'
+#!/bin/bash
+run=/tmp/imochallenge/run
+logs=/tmp/imochallenge/logs
+shopt -s nullglob
+if [ "$#" -ge 1 ]; then
+    set -- "$1"
+else
+    set --
+    for f in "$run"/*.pid; do
+        set -- "$@" "$(basename "$f" .pid)"
+    done
+fi
+[ "$#" -gt 0 ] || { echo "no runs under $run"; exit 0; }
+for n in "$@"; do
+    pidf="$run/$n.pid"
+    log="$logs/$n.log"
+    pid=$(cat "$pidf" 2>/dev/null || echo '?')
+    if [ "$pid" != '?' ] && kill -0 "$pid" 2>/dev/null; then
+        st=RUNNING
+    else
+        st=stopped
+    fi
+    printf '== %-20s [%s] pid=%s\n' "$n" "$st" "$pid"
+    [ -f "$log" ] && tail -n 3 "$log" | sed 's/^/   /'
+done
+EOF
+    chmod +x /usr/local/bin/opd-run /usr/local/bin/opd-status
+
+%test
+    python -m py_compile \
+        /app/train.py \
+        /app/train_engine.py \
+        /app/train_engine_rl.py \
+        /app/train_engine_verl.py \
+        /app/proof_opd_env.py
+    python - <<'PY'
+from importlib.metadata import PackageNotFoundError, version
+
+import torch
+
+print("proof pilot SIF OK")
+print("torch", torch.__version__)
+print("cuda", torch.version.cuda)
+for dist_name in [
+    "vllm",
+    "torchao",
+    "transformer-engine",
+    "nvidia-nccl-cu13",
+    "flashinfer-python",
+    "flash-attn",
+    "flash-attn-3",
+    "ring-flash-attn",
+    "verifiers",
+    "deep-gemm",
+]:
+    try:
+        print(dist_name, version(dist_name))
+    except PackageNotFoundError:
+        print(dist_name, "not installed")
+for module_name in ["proof_opd_env", "deepseek_math_v2_env"]:
+    __import__(module_name)
+    print(module_name, "import OK")
+PY
+    test -x /app/entrypoint.sh
+    test -x /usr/local/bin/opd-run
+    test -x /usr/local/bin/opd-status
 
 %runscript
-    exec python /app/train.py "$@"
+    exec /app/entrypoint.sh "$@"
