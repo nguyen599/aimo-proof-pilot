@@ -119,9 +119,8 @@ From: chankhavu/aimo-proof-pilot:v4
     uv pip uninstall --system kernels || true
     uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
     if [ -f /app/remote-shell/daemon/requirements.txt ]; then
-        if [ ! -x /opt/venv-daemon/bin/python ]; then
-            uv venv /opt/venv-daemon
-        fi
+        rm -rf /opt/venv-daemon
+        uv venv /opt/venv-daemon
         uv pip install --python /opt/venv-daemon/bin/python --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
     fi
 
@@ -251,4 +250,15 @@ PY
     test -x /usr/local/bin/opd-status
 
 %runscript
+    if [ "${1:-}" = "launcher-dryrun" ] || [ "${1:-}" = "pbs-dryrun" ]; then
+        shift
+        exec python /app/train.py --dry_run_launch "$@"
+    fi
+    if [ "${1:-}" = "train" ]; then
+        shift
+        exec python /app/train.py "$@"
+    fi
+    if [ "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; then
+        exec python /app/train.py "$@"
+    fi
     exec /app/entrypoint.sh "$@"
