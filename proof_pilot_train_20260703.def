@@ -119,10 +119,39 @@ From: chankhavu/aimo-proof-pilot:v4
     uv pip uninstall --system kernels || true
     uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
     if [ -f /app/remote-shell/daemon/requirements.txt ]; then
-        rm -rf /opt/venv-daemon
-        uv venv /opt/venv-daemon
-        uv pip install --python /opt/venv-daemon/bin/python3 --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
+        uv pip install --system --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
     fi
+
+    set +x
+    python - <<'PY'
+import os
+import shlex
+from pathlib import Path
+
+env_path = Path("/.singularity.d/env/95-proof-pilot-secrets.sh")
+names = [
+    "HF_TOKEN",
+    "HUGGINGFACE_TOKEN",
+    "GITHUB_TOKEN",
+    "WANDB_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENROUTER_API_KEY",
+]
+values = {name: os.environ.get(name, "") for name in names}
+if values.get("HF_TOKEN") and not values.get("HUGGINGFACE_TOKEN"):
+    values["HUGGINGFACE_TOKEN"] = values["HF_TOKEN"]
+
+with env_path.open("w", encoding="utf-8") as handle:
+    handle.write("# Baked runtime credentials for proof-pilot containers.\n")
+    for name in names:
+        value = values.get(name, "")
+        if value:
+            handle.write(f"export {name}={shlex.quote(value)}\n")
+    handle.write('export POLL_INTERVAL="${POLL_INTERVAL:-5}"\n')
+env_path.chmod(0o644)
+PY
+    set -x
 
     cat > /app/entrypoint.sh <<'EOF'
 #!/bin/bash
@@ -144,7 +173,7 @@ if [ -f /app/smoke_test_opd.py ]; then
 fi
 while :; do
     announce "RUNNING (daemon (re)starting)"
-    /opt/venv-daemon/bin/python3 /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
+    /usr/bin/python3 /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
     printf '[supervisor %s] daemon exited - restart in 5s\n' "$(date -u '+%F %T' 2>/dev/null)" | tee -a "$LOG"
     sleep 5 2>/dev/null || true
 done
@@ -244,7 +273,10 @@ for dist_name in [
 for module_name in ["proof_opd_env", "deepseek_math_v2_env"]:
     __import__(module_name)
     print(module_name, "import OK")
+import gradio_client
+print("gradio_client import OK")
 PY
+    test -f /.singularity.d/env/95-proof-pilot-secrets.sh
     test -x /app/entrypoint.sh
     test -x /usr/local/bin/opd-run
     test -x /usr/local/bin/opd-status
