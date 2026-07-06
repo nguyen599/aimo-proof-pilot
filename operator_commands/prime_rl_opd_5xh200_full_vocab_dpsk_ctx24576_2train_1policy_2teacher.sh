@@ -50,7 +50,7 @@ export PRIME_OPD_POLICY_GPU_MEMORY_UTILIZATION="${PRIME_OPD_POLICY_GPU_MEMORY_UT
 export PRIME_OPD_TEACHER_VLLM_ENFORCE_EAGER="${PRIME_OPD_TEACHER_VLLM_ENFORCE_EAGER:-false}"
 export PRIME_VLLM_ENFORCE_EAGER="${PRIME_VLLM_ENFORCE_EAGER:-false}"
 export PRIME_OPD_TEACHER_USE_DEEP_GEMM="${PRIME_OPD_TEACHER_USE_DEEP_GEMM:-false}"
-export PRIME_OPD_TEACHER_VLLM_EXTRA="${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"attention_config.use_fp4_indexer_cache\":true,\"moe_backend\":\"deep_gemm_mega_moe\"}}"
+export PRIME_OPD_TEACHER_VLLM_EXTRA="${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true}}"
 
 export PRIME_PROOF_NUM_VERIFIERS="${PRIME_PROOF_NUM_VERIFIERS:-4}"
 export PRIME_PROOF_REFINE_ROUNDS="${PRIME_PROOF_REFINE_ROUNDS:-0}"
