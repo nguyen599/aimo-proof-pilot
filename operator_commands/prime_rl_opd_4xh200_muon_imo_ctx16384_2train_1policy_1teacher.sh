@@ -67,6 +67,12 @@ WEIGHT_BROADCAST_TYPE="${PRIME_WEIGHT_BROADCAST_TYPE:-filesystem}"
 WEIGHT_BROADCAST_PORT="${PRIME_WEIGHT_BROADCAST_PORT:-29501}"
 WEIGHT_BROADCAST_TIMEOUT="${PRIME_WEIGHT_BROADCAST_TIMEOUT:-3600}"
 WEIGHT_BROADCAST_QUANTIZE="${PRIME_WEIGHT_BROADCAST_QUANTIZE:-false}"
+OPD_DISTILL_MODE="${PRIME_OPD_DISTILL_MODE:-token_logprobs}"
+OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH="${PRIME_OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH:-${TEACHER_MODEL_PATH}}"
+OPD_FULL_VOCAB_TEACHER_LM_HEAD_KEY="${PRIME_OPD_FULL_VOCAB_TEACHER_LM_HEAD_KEY:-}"
+OPD_FULL_VOCAB_TEACHER_HIDDEN_DTYPE="${PRIME_OPD_FULL_VOCAB_TEACHER_HIDDEN_DTYPE:-float16}"
+OPD_FULL_VOCAB_TOKEN_CHUNK_SIZE="${PRIME_OPD_FULL_VOCAB_TOKEN_CHUNK_SIZE:-64}"
+OPD_FULL_VOCAB_VOCAB_CHUNK_SIZE="${PRIME_OPD_FULL_VOCAB_VOCAB_CHUNK_SIZE:-8192}"
 
 if [[ -z "${TEACHER_VLLM_EXTRA}" && "${TEACHER_MODEL_PATH}" == *"/dpsk-v4-flash"* ]]; then
   TEACHER_VLLM_EXTRA='{"kv_cache_dtype":"fp8"}'
@@ -85,6 +91,7 @@ echo "[prime-opd] max_examples=${PROOF_MAX_EXAMPLES} ctx=${CTX_LEN} rollout_max_
 echo "[prime-opd] gpu_layout train=${TRAIN_GPUS} infer=${INFER_GPUS} teacher=${TEACHER_GPU_IDS} gpus_per_node=${GPUS_PER_NODE}"
 echo "[prime-opd] vllm policy_tp=${POLICY_TP} policy_dp=${POLICY_DP} teacher_tp=${TEACHER_TP} teacher_dp=${TEACHER_DP}"
 echo "[prime-opd] weight_broadcast type=${WEIGHT_BROADCAST_TYPE} port=${WEIGHT_BROADCAST_PORT} timeout=${WEIGHT_BROADCAST_TIMEOUT} quantize=${WEIGHT_BROADCAST_QUANTIZE}"
+echo "[prime-opd] distill_mode=${OPD_DISTILL_MODE} full_vocab_teacher_lm_head=${OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH}"
 echo "[prime-opd] vllm_enforce_eager policy=${POLICY_ENFORCE_EAGER} teacher=${TEACHER_ENFORCE_EAGER}"
 echo "[prime-opd] teacher_vllm_extra=${TEACHER_VLLM_EXTRA:-<none>}"
 echo "[prime-opd] vllm_deep_gemm policy=${POLICY_USE_DEEP_GEMM} teacher=${TEACHER_USE_DEEP_GEMM}"
@@ -115,6 +122,12 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
   --prime_checkpoint_keep_interval "${CHECKPOINT_KEEP_INTERVAL}" \
   --prime_checkpoint_weights_only "${CHECKPOINT_WEIGHTS_ONLY}" \
   --prime_algorithm opd \
+  --prime_opd_distill_mode "${OPD_DISTILL_MODE}" \
+  --prime_opd_full_vocab_teacher_lm_head_path "${OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH}" \
+  --prime_opd_full_vocab_teacher_lm_head_key "${OPD_FULL_VOCAB_TEACHER_LM_HEAD_KEY}" \
+  --prime_opd_full_vocab_teacher_hidden_dtype "${OPD_FULL_VOCAB_TEACHER_HIDDEN_DTYPE}" \
+  --prime_opd_full_vocab_token_chunk_size "${OPD_FULL_VOCAB_TOKEN_CHUNK_SIZE}" \
+  --prime_opd_full_vocab_vocab_chunk_size "${OPD_FULL_VOCAB_VOCAB_CHUNK_SIZE}" \
   --prime_opd_teacher_model "${TEACHER_MODEL_PATH}" \
   --prime_opd_start_teacher true \
   --prime_opd_teacher_gpu_ids "${TEACHER_GPU_IDS}" \

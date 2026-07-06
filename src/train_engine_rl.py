@@ -132,6 +132,8 @@ def write_prime_rl_config(path: Path, config: dict[str, Any]) -> None:
         write_toml_lines(lines, "wandb", config["wandb"])
     write_toml_lines(lines, "trainer.model", config["trainer_model"])
     write_toml_lines(lines, "trainer.optim", config["trainer_optim"])
+    if config.get("trainer_full_vocab_distill"):
+        write_toml_lines(lines, "trainer.full_vocab_distill", config["trainer_full_vocab_distill"])
     if config.get("trainer_ckpt"):
         write_toml_lines(lines, "trainer.ckpt", config["trainer_ckpt"])
         if config.get("trainer_ckpt_weights"):
@@ -397,14 +399,32 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
 
     orchestrator_algo: dict[str, Any] | None = None
     orchestrator_algo_teacher: dict[str, Any] | None = None
+    trainer_full_vocab_distill: dict[str, Any] | None = None
     if args.prime_algorithm != "grpo":
         orchestrator_algo = {"type": args.prime_algorithm}
     if args.prime_algorithm == "opd":
+        orchestrator_algo = {"type": "opd"}
         orchestrator_algo_teacher = {
             "name": args.prime_opd_teacher_model,
             "base_url": [args.prime_opd_teacher_base_url or f"http://localhost:{args.prime_opd_teacher_port}/v1"],
             "skip_model_check": args.prime_opd_teacher_skip_model_check,
         }
+        if args.prime_opd_distill_mode == "full_vocab_hidden":
+            orchestrator_algo.update(
+                {
+                    "distill_mode": args.prime_opd_distill_mode,
+                    "teacher_hidden_dtype": args.prime_opd_full_vocab_teacher_hidden_dtype,
+                }
+            )
+            trainer_full_vocab_distill = {
+                "enabled": True,
+                "teacher_lm_head_path": args.prime_opd_full_vocab_teacher_lm_head_path
+                or args.prime_opd_teacher_model,
+                "teacher_lm_head_key": args.prime_opd_full_vocab_teacher_lm_head_key,
+                "token_chunk_size": args.prime_opd_full_vocab_token_chunk_size,
+                "vocab_chunk_size": args.prime_opd_full_vocab_vocab_chunk_size,
+                "teacher_hidden_dtype": args.prime_opd_full_vocab_teacher_hidden_dtype,
+            }
 
     trainer_optim = {
         "type": args.optimizer,
@@ -502,6 +522,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "fp8": args.prime_trainer_fp8,
         },
         "trainer_optim": trainer_optim,
+        "trainer_full_vocab_distill": trainer_full_vocab_distill,
         "trainer_ckpt": trainer_ckpt,
         "trainer_ckpt_weights": trainer_ckpt_weights,
         "orchestrator": orchestrator_config,
@@ -943,6 +964,20 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_opd_teacher_vllm_max_num_batched_tokens", type=int, default=None)
     parser.add_argument("--prime_opd_teacher_vllm_reasoning_parser", default="deepseek_v4")
     parser.add_argument("--prime_opd_teacher_vllm_extra", default=None)
+    parser.add_argument(
+        "--prime_opd_distill_mode",
+        default="token_logprobs",
+        choices=("token_logprobs", "full_vocab_hidden"),
+        help=(
+            "OPD teacher signal. token_logprobs keeps the legacy sampled-token reverse-KL path. "
+            "full_vocab_hidden requests teacher hidden states and computes full-vocab reverse KL in the trainer."
+        ),
+    )
+    parser.add_argument("--prime_opd_full_vocab_teacher_lm_head_path", default=None)
+    parser.add_argument("--prime_opd_full_vocab_teacher_lm_head_key", default=None)
+    parser.add_argument("--prime_opd_full_vocab_teacher_hidden_dtype", default="float16", choices=("float16", "bfloat16", "float32"))
+    parser.add_argument("--prime_opd_full_vocab_token_chunk_size", type=int, default=64)
+    parser.add_argument("--prime_opd_full_vocab_vocab_chunk_size", type=int, default=8192)
     parser.add_argument("--with_tracking", action="store_true")
     parser.add_argument("--wandb_mode", default="online")
     parser.add_argument("--wandb_project", default="olmo3-prime-rl")
