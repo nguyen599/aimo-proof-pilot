@@ -102,6 +102,7 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
 
 /usr/bin/python /app/train.py \
   --fetch-update \
+  --submissions-repo "${SUBMISSIONS_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}" \
   --submissions-ref "${SUBMISSIONS_REF:-main}" \
   --prime-rl-ref "${PRIME_RL_REF:-main}" \
   --runtime-fetch-state-dir "/tmp/train-runtime-fetch-${RUN_NAME}" \
