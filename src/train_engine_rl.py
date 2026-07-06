@@ -59,6 +59,23 @@ def redacted(value: Any) -> Any:
     return value
 
 
+def configure_cuda_toolchain_env() -> None:
+    cuda_home = Path(os.environ.get("CUDA_HOME") or "/usr/local/cuda")
+    nvcc = cuda_home / "bin" / "nvcc"
+    if not nvcc.exists():
+        return
+
+    os.environ.setdefault("CUDA_HOME", str(cuda_home))
+    os.environ.setdefault("CUDA_PATH", os.environ["CUDA_HOME"])
+    os.environ.setdefault("CUDACXX", str(nvcc))
+    os.environ.setdefault("NVCC", str(nvcc))
+
+    path_parts = [part for part in os.environ.get("PATH", "").split(os.pathsep) if part]
+    cuda_bin = str(cuda_home / "bin")
+    if cuda_bin not in path_parts:
+        os.environ["PATH"] = os.pathsep.join([cuda_bin, *path_parts])
+
+
 def get_wandb_api_key_from_netrc() -> str | None:
     for netrc_path in (Path.home() / ".netrc", Path("/root/.netrc")):
         if not netrc_path.is_file():
@@ -1032,6 +1049,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("VERL_RLCSD_OLMO3_SINK", "1")
     os.environ.setdefault("VLLM_ALLOW_INSECURE_SERIALIZATION", "1")
     os.environ.setdefault("RAY_DEDUP_LOGS", "1")
+    configure_cuda_toolchain_env()
     if args.wandb_mode:
         os.environ["WANDB_MODE"] = args.wandb_mode
     enable_system_nccl_preload_for_transformer_engine(args)

@@ -10,6 +10,14 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
+if [[ -x /usr/local/cuda/bin/nvcc ]]; then
+  export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+  export CUDA_PATH="${CUDA_PATH:-${CUDA_HOME}}"
+  export CUDACXX="${CUDACXX:-${CUDA_HOME}/bin/nvcc}"
+  export NVCC="${NVCC:-${CUDA_HOME}/bin/nvcc}"
+  export PATH="${CUDA_HOME}/bin:${PATH}"
+fi
+
 RUN_NAME="${OLMO_RUN_DIR_NAME:-prime_rl_opd_muon_imo_mixed_ctx20480_4gpu_2train_1policy_1teacher_$(date -u +%Y%m%d_%H%M%S)}"
 export OLMO_RUN_DIR_NAME="${RUN_NAME}"
 
