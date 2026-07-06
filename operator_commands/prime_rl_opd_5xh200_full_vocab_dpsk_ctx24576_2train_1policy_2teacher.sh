@@ -4,7 +4,7 @@ set -euo pipefail
 # 5xH200 full-vocab OPD test:
 #   GPU0-1: OLMo3Sink trainer
 #   GPU2:   OLMo3Sink policy rollout
-#   GPU3-4: DeepSeek-V4-Flash teacher hidden-state scorer (DP=2, TP=1)
+#   GPU3-4: DeepSeek-V4-Flash teacher hidden-state scorer (TP=2)
 #
 # This keeps the main 4x command as the single implementation surface and only
 # overrides the run shape and full-vocab distillation knobs.
@@ -26,8 +26,8 @@ export PRIME_TRAIN_GPUS="${PRIME_TRAIN_GPUS:-2}"
 export PRIME_INFER_GPUS="${PRIME_INFER_GPUS:-1}"
 export PRIME_GPUS_PER_NODE="${PRIME_GPUS_PER_NODE:-5}"
 export PRIME_OPD_TEACHER_GPU_IDS="${PRIME_OPD_TEACHER_GPU_IDS:-3,4}"
-export PRIME_OPD_TEACHER_TP="${PRIME_OPD_TEACHER_TP:-1}"
-export PRIME_OPD_TEACHER_DP="${PRIME_OPD_TEACHER_DP:-2}"
+export PRIME_OPD_TEACHER_TP="${PRIME_OPD_TEACHER_TP:-2}"
+export PRIME_OPD_TEACHER_DP="${PRIME_OPD_TEACHER_DP:-1}"
 export PRIME_TRAINER_CP="${PRIME_TRAINER_CP:-1}"
 
 export PRIME_OPD_CTX_LEN="${PRIME_OPD_CTX_LEN:-24576}"
@@ -44,11 +44,12 @@ export PRIME_OPD_MAX_INFLIGHT_ROLLOUTS="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-8}"
 export PRIME_BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
 export PRIME_GROUP_SIZE="${PRIME_GROUP_SIZE:-2}"
 
-export PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION="${PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION:-0.90}"
+export PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION="${PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION:-0.95}"
 export PRIME_OPD_POLICY_GPU_MEMORY_UTILIZATION="${PRIME_OPD_POLICY_GPU_MEMORY_UTILIZATION:-0.90}"
 export PRIME_OPD_TEACHER_VLLM_ENFORCE_EAGER="${PRIME_OPD_TEACHER_VLLM_ENFORCE_EAGER:-false}"
 export PRIME_VLLM_ENFORCE_EAGER="${PRIME_VLLM_ENFORCE_EAGER:-false}"
 export PRIME_OPD_TEACHER_USE_DEEP_GEMM="${PRIME_OPD_TEACHER_USE_DEEP_GEMM:-false}"
+export PRIME_OPD_TEACHER_VLLM_EXTRA="${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"attention_config.use_fp4_indexer_cache\":true,\"moe_backend\":\"deep_gemm_mega_moe\"}}"
 
 export PRIME_PROOF_NUM_VERIFIERS="${PRIME_PROOF_NUM_VERIFIERS:-4}"
 export PRIME_PROOF_REFINE_ROUNDS="${PRIME_PROOF_REFINE_ROUNDS:-0}"
