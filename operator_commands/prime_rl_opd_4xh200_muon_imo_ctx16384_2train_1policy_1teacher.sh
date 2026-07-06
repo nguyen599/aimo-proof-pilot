@@ -15,6 +15,7 @@ export OLMO_RUN_DIR_NAME="${RUN_NAME}"
 
 MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/vol/olmo_train_assets/models/opd-32b-v33-s150/opd-32b-v33-s150}"
 TEACHER_MODEL_PATH="${PRIME_OPD_TEACHER_MODEL_PATH:-/vol/olmo_train_assets/models/opd-32b-deploy/opd-32b-deploy}"
+OPTIMIZER="${PRIME_OPTIMIZER:-te_fused_adamw}"
 DATASET_PATH="${PRIME_OPD_DATASET_PATH:-/tmp/aimo-proof-pilot-runtime/imo_data_1959_2024.csv}"
 VERIFIABLE_DATASET_PATH="${PRIME_OPD_VERIFIABLE_DATASET_PATH:-/tmp/aimo-proof-pilot-runtime/astralbench.csv}"
 VERIFIABLE_FRACTION="${PRIME_OPD_VERIFIABLE_FRACTION:-0.20}"
@@ -92,6 +93,7 @@ echo "[prime-opd] gpu_layout train=${TRAIN_GPUS} infer=${INFER_GPUS} teacher=${T
 echo "[prime-opd] vllm policy_tp=${POLICY_TP} policy_dp=${POLICY_DP} teacher_tp=${TEACHER_TP} teacher_dp=${TEACHER_DP}"
 echo "[prime-opd] weight_broadcast type=${WEIGHT_BROADCAST_TYPE} port=${WEIGHT_BROADCAST_PORT} timeout=${WEIGHT_BROADCAST_TIMEOUT} quantize=${WEIGHT_BROADCAST_QUANTIZE}"
 echo "[prime-opd] distill_mode=${OPD_DISTILL_MODE} full_vocab_teacher_lm_head=${OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH}"
+echo "[prime-opd] optimizer=${OPTIMIZER}"
 echo "[prime-opd] vllm_enforce_eager policy=${POLICY_ENFORCE_EAGER} teacher=${TEACHER_ENFORCE_EAGER}"
 echo "[prime-opd] teacher_vllm_extra=${TEACHER_VLLM_EXTRA:-<none>}"
 echo "[prime-opd] vllm_deep_gemm policy=${POLICY_USE_DEEP_GEMM} teacher=${TEACHER_USE_DEEP_GEMM}"
@@ -113,7 +115,7 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
   --max_train_steps "${MAX_TRAIN_STEPS:-30}" \
   --max_seq_length "${CTX_LEN}" \
   --rollout_max_completion_tokens "${COMPLETION_TOKENS}" \
-  --optimizer te_fused_adamw \
+  --optimizer "${OPTIMIZER}" \
   --learning_rate 1e-7 \
   --weight_decay 0.0 \
   --max_grad_norm 1.0 \
