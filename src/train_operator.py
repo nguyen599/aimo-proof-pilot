@@ -1009,7 +1009,6 @@ def run_operator_subprocess(
             output_parts.append(message)
         else:
             append_live_output(message)
-            maybe_upload_live(force=True)
         return return_code, "".join(output_parts)
 
     while True:
@@ -1034,7 +1033,6 @@ def run_operator_subprocess(
                 process_exited_at = time.monotonic()
             if stdout_closed:
                 reader.join(timeout=1)
-                maybe_upload_live(force=True)
                 return return_code, "".join(output_parts)
             if time.monotonic() - process_exited_at > 2.0:
                 logging.warning(
@@ -1048,7 +1046,6 @@ def run_operator_subprocess(
                 except Exception:
                     pass
                 reader.join(timeout=1)
-                maybe_upload_live(force=True)
                 return return_code, "".join(output_parts)
 
         if cancel_event is not None and cancel_event.is_set():
