@@ -1945,6 +1945,10 @@ def install_python_target(source: Path | str, site_dir: Path, label: str, *, no_
     site_dir.mkdir(parents=True, exist_ok=True)
     if "github.com" in str(source):
         configure_git_https_rewrites_for_runtime_installs()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        dict.fromkeys(part for part in (str(site_dir), env.get("PYTHONPATH", "")) if part)
+    )
     command = [
         sys.executable,
         "-m",
@@ -1963,7 +1967,7 @@ def install_python_target(source: Path | str, site_dir: Path, label: str, *, no_
         command.insert(command.index("--target"), "--no-deps")
     mode = "without dependency resolution" if no_deps else "with dependency resolution"
     log(f"Installing runtime {label} into {site_dir} {mode}")
-    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     if process.returncode != 0:
         raise RuntimeError(
             f"Runtime {label} install failed with exit code {process.returncode}.\n"
@@ -2077,6 +2081,10 @@ def install_python_requirements(
         no_deps = grpo_runtime_pip_no_deps_enabled()
     if any("github.com" in requirement for requirement in requirements):
         configure_git_https_rewrites_for_runtime_installs()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        dict.fromkeys(part for part in (str(site_dir), env.get("PYTHONPATH", "")) if part)
+    )
     command = [
         sys.executable,
         "-m",
@@ -2106,6 +2114,7 @@ def install_python_requirements(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=env,
     )
     if process.returncode != 0:
         raise RuntimeError(
@@ -2608,8 +2617,9 @@ def prepare_runtime_training_dependencies(
         if runtime_requirements:
             install_python_requirements(runtime_requirements, site_dir, "Prime-RL runtime", no_deps=False)
         prepare_prime_rl_checkout_for_install(prime_rl_dir)
-        install_python_global_requirements(
+        install_python_requirements(
             prime_rl_build_requirements(),
+            site_dir,
             "Prime-RL build",
             no_deps=False,
         )
