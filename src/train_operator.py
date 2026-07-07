@@ -409,15 +409,20 @@ def download_github_raw_text(repo: str, path_in_repo: str, branch: str) -> str:
         raise
 
 
-def download_github_api_text(repo: str, path_in_repo: str, branch: str) -> str:
+def github_contents_api_json(
+    method: str,
+    repo: str,
+    path_in_repo: str,
+    branch: str,
+    payload: dict[str, object] | None = None,
+) -> dict[str, object] | None:
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     quoted_path = "/".join(
         urllib_request.pathname2url(part) for part in path_in_repo.strip("/").split("/")
     )
-    url = (
-        f"https://api.github.com/repos/{repo.strip('/')}/contents/{quoted_path}"
-        f"?ref={urllib_request.pathname2url(branch)}"
-    )
+    url = f"https://api.github.com/repos/{repo.strip('/')}/contents/{quoted_path}"
+    if method.upper() == "GET":
+        url = f"{url}?ref={urllib_request.pathname2url(branch)}"
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "train-operator",
@@ -425,24 +430,59 @@ def download_github_api_text(repo: str, path_in_repo: str, branch: str) -> str:
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    request = urllib_request.Request(url, headers=headers)
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib_request.Request(url, data=data, headers=headers, method=method.upper())
     try:
         with urllib_request.urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+            raw = response.read().decode("utf-8", errors="replace")
     except HTTPError as exc:
         if exc.code == 404:
-            raise FileNotFoundError(f"{repo}/{path_in_repo} not found on branch {branch}") from exc
+            return None
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"GitHub API GET {url} failed: HTTP {exc.code}: {detail}") from exc
+        raise RuntimeError(f"GitHub API {method} {url} failed: HTTP {exc.code}: {detail}") from exc
+    return json.loads(raw) if raw.strip() else {}
+
+
+def github_api_download_text_with_sha(repo: str, path_in_repo: str, branch: str) -> tuple[str, str | None]:
+    payload = github_contents_api_json("GET", repo, path_in_repo, branch)
+    if payload is None:
+        raise FileNotFoundError(f"{repo}/{path_in_repo} not found on branch {branch}")
     if not isinstance(payload, dict):
-        raise RuntimeError(f"GitHub API GET {url} returned non-object payload")
+        raise RuntimeError(f"GitHub API GET {repo}/{path_in_repo} returned non-object payload")
     content = payload.get("content")
     if not isinstance(content, str):
-        raise RuntimeError(f"GitHub API GET {url} returned no text content")
+        raise RuntimeError(f"GitHub API GET {repo}/{path_in_repo} returned no text content")
     encoding = payload.get("encoding")
     if encoding != "base64":
-        raise RuntimeError(f"GitHub API GET {url} returned unsupported encoding {encoding!r}")
-    return base64.b64decode(content).decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API GET {repo}/{path_in_repo} returned unsupported encoding {encoding!r}")
+    sha = payload.get("sha")
+    return base64.b64decode(content).decode("utf-8", errors="replace"), sha if isinstance(sha, str) else None
+
+
+def download_github_api_text(repo: str, path_in_repo: str, branch: str) -> str:
+    text, _ = github_api_download_text_with_sha(repo, path_in_repo, branch)
+    return text
+
+
+def upload_github_api_text(
+    repo: str,
+    path_in_repo: str,
+    text: str,
+    branch: str,
+    message: str,
+    sha: str | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "message": message,
+        "content": base64.b64encode(text.encode("utf-8")).decode("ascii"),
+        "branch": branch,
+    }
+    if sha:
+        payload["sha"] = sha
+    github_contents_api_json("PUT", repo, path_in_repo, branch, payload)
 
 
 def upload_github_git_file(
@@ -1407,6 +1447,58 @@ def set_operator_key_record(
     operators[node_label] = operator_key_record(node_label, operator_key, started_utc)
 
 
+def claim_operator_key_github_api(
+    args: argparse.Namespace,
+    node_label: str,
+    operator_key: str,
+    started_utc: str,
+    max_attempts: int,
+) -> None:
+    last_error: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            try:
+                raw_text, sha = github_api_download_text_with_sha(
+                    args.operator_command_repo,
+                    args.operator_key_file,
+                    args.operator_github_branch,
+                )
+                registry = parse_operator_key_registry(raw_text, node_label)
+            except FileNotFoundError:
+                sha = None
+                registry = {"version": 1, "operators": {}}
+            raw_record = operator_registry_record_for_node(registry, node_label)
+            active_key = operator_registry_key_for_node(registry, node_label)
+            if active_key and not operator_record_is_stale_for_local(raw_record, started_utc):
+                remote_started = operator_record_started_utc(raw_record) or "<missing>"
+                raise RuntimeError(
+                    (
+                        f"Refusing to overwrite newer operator key for node {node_label}: "
+                        f"local_started={started_utc} remote_started={remote_started} remote_key={active_key}"
+                    )
+                )
+            set_operator_key_record(registry, node_label, operator_key, started_utc)
+            upload_github_api_text(
+                args.operator_command_repo,
+                args.operator_key_file,
+                operator_key_registry_text(registry),
+                args.operator_github_branch,
+                f"Claim operator key for node {node_label}",
+                sha=sha,
+            )
+            return
+        except Exception as exc:
+            last_error = exc
+            retryable_conflict = "HTTP 409" in str(exc) or "HTTP 422" in str(exc)
+            if not retryable_conflict or attempt >= max_attempts:
+                break
+            time.sleep(min(5.0, 0.25 * attempt) + random.uniform(0.0, 0.5))
+    raise RuntimeError(
+        f"Failed to claim operator key for node {node_label} with GitHub API after "
+        f"{max_attempts} attempts: {last_error}"
+    )
+
+
 def claim_operator_key(
     args: argparse.Namespace,
     work_dir: Path,
@@ -1415,6 +1507,20 @@ def claim_operator_key(
     started_utc: str,
     max_attempts: int = 20,
 ) -> None:
+    if operator_prefers_github(args):
+        try:
+            claim_operator_key_github_api(
+                args,
+                node_label,
+                operator_key,
+                started_utc,
+                max_attempts=max_attempts,
+            )
+            return
+        except Exception:
+            if getattr(args, "operator_backend", "github") != "auto":
+                raise
+            logging.exception("GitHub API operator-key claim failed; falling back to repository upload.")
     last_error: BaseException | None = None
     for attempt in range(1, max_attempts + 1):
         try:
