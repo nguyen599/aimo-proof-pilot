@@ -55,8 +55,27 @@ def output_path_for_node(prefix: str, node: str, command_id: str = "") -> str:
     return repo_file(prefix, f"output_node{label}{suffix}.txt")
 
 
+def node_from_output_path(path: str) -> str:
+    name = Path(path).name
+    if not name.startswith("output_node") or not name.endswith(".txt"):
+        return "none"
+    stem = name[: -len(".txt")]
+    rest = stem[len("output_node") :]
+    if "_" in rest:
+        rest = rest.split("_", 1)[0]
+    return normalize_node_label(rest)
+
+
 def output_repo(args: argparse.Namespace) -> str:
     return args.output_repo or args.repo
+
+
+def output_github_branch(args: argparse.Namespace, node: str) -> str:
+    template = str(getattr(args, "output_github_branch_template", "") or "").strip()
+    if not template:
+        return args.github_branch
+    safe_node = normalize_node_label(node)
+    return re.sub(r"[^A-Za-z0-9._/-]+", "-", template.format(node=safe_node)).strip("-/") or args.github_branch
 
 
 def github_token() -> str:
@@ -136,58 +155,105 @@ def ensure_client_github_git_repo(
 
         repo_dir.parent.mkdir(parents=True, exist_ok=True)
         shutil.rmtree(repo_dir, ignore_errors=True)
-        run_github_git(
-            [
-                "clone",
-                "--depth",
-                "1",
-                "--filter=blob:none",
-                "--no-checkout",
-                "--branch",
-                branch,
-                repo_url,
-                str(repo_dir),
-            ]
-        )
+        clone_args = [
+            "clone",
+            "--depth",
+            "1",
+            "--filter=blob:none",
+            "--no-checkout",
+            "--branch",
+            branch,
+            repo_url,
+            str(repo_dir),
+        ]
+        try:
+            run_github_git(clone_args)
+        except Exception:
+            if branch == args.github_branch:
+                raise
+            run_github_git(
+                [
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--filter=blob:none",
+                    "--no-checkout",
+                    "--branch",
+                    args.github_branch,
+                    repo_url,
+                    str(repo_dir),
+                ]
+            )
         run_github_git(["config", "user.email", "operator-client@local"], cwd=repo_dir)
         run_github_git(["config", "user.name", "operator-client"], cwd=repo_dir)
         if paths:
             run_github_git(["sparse-checkout", "init", "--no-cone"], cwd=repo_dir)
             run_github_git(["sparse-checkout", "set", *paths], cwd=repo_dir)
-            run_github_git(["checkout", "-B", branch, f"origin/{branch}"], cwd=repo_dir)
+            try:
+                run_github_git(["checkout", "-B", branch, f"origin/{branch}"], cwd=repo_dir)
+            except Exception:
+                run_github_git(["checkout", "-B", branch, f"origin/{args.github_branch}"], cwd=repo_dir)
         return repo_dir
     try:
         run_github_git(["remote", "set-url", "origin", repo_url], cwd=repo_dir)
         run_github_git(["reset", "--hard"], cwd=repo_dir)
         run_github_git(["clean", "-fd"], cwd=repo_dir)
-        run_github_git(["fetch", "--depth", "1", "origin", branch], cwd=repo_dir)
+        try:
+            run_github_git(["fetch", "--depth", "1", "origin", branch], cwd=repo_dir)
+        except Exception:
+            if branch == args.github_branch:
+                raise
+            run_github_git(["fetch", "--depth", "1", "origin", args.github_branch], cwd=repo_dir)
         if paths:
             run_github_git(["sparse-checkout", "init", "--no-cone"], cwd=repo_dir)
             run_github_git(["sparse-checkout", "set", *paths], cwd=repo_dir)
-            reset_github_git_worktree(repo_dir, branch)
+            try:
+                reset_github_git_worktree(repo_dir, branch)
+            except Exception:
+                run_github_git(["checkout", "-B", branch, f"origin/{args.github_branch}"], cwd=repo_dir)
     except Exception:
         import shutil
 
         shutil.rmtree(repo_dir, ignore_errors=True)
-        run_github_git(
-            [
-                "clone",
-                "--depth",
-                "1",
-                "--filter=blob:none",
-                "--no-checkout",
-                "--branch",
-                branch,
-                repo_url,
-                str(repo_dir),
-            ]
-        )
+        try:
+            run_github_git(
+                [
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--filter=blob:none",
+                    "--no-checkout",
+                    "--branch",
+                    branch,
+                    repo_url,
+                    str(repo_dir),
+                ]
+            )
+        except Exception:
+            if branch == args.github_branch:
+                raise
+            run_github_git(
+                [
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--filter=blob:none",
+                    "--no-checkout",
+                    "--branch",
+                    args.github_branch,
+                    repo_url,
+                    str(repo_dir),
+                ]
+            )
         run_github_git(["config", "user.email", "operator-client@local"], cwd=repo_dir)
         run_github_git(["config", "user.name", "operator-client"], cwd=repo_dir)
         if paths:
             run_github_git(["sparse-checkout", "init", "--no-cone"], cwd=repo_dir)
             run_github_git(["sparse-checkout", "set", *paths], cwd=repo_dir)
-            run_github_git(["checkout", "-B", branch, f"origin/{branch}"], cwd=repo_dir)
+            try:
+                run_github_git(["checkout", "-B", branch, f"origin/{branch}"], cwd=repo_dir)
+            except Exception:
+                run_github_git(["checkout", "-B", branch, f"origin/{args.github_branch}"], cwd=repo_dir)
     return repo_dir
 
 
@@ -357,7 +423,13 @@ def list_output_paths(args: argparse.Namespace) -> list[str]:
     prefix = args.prefix.strip("/")
     if client_prefers_github(args):
         try:
-            files = github_git_list_files(args, repo_id, args.github_branch)
+            if str(getattr(args, "output_github_branch_template", "") or "").strip():
+                files = []
+                nodes = operator_nodes_from_key_file(args)
+                for node in nodes:
+                    files.extend(github_git_list_files(args, repo_id, output_github_branch(args, node)))
+            else:
+                files = github_git_list_files(args, repo_id, args.github_branch)
         except Exception as git_exc:
             if args.backend != "auto":
                 raise
@@ -453,7 +525,8 @@ def fetch_outputs(args: argparse.Namespace) -> dict[str, str]:
     github_repo_dir: Path | None = None
     if client_prefers_github(args):
         try:
-            github_repo_dir = ensure_client_github_git_repo(args, repo_id, args.github_branch, paths)
+            if not str(getattr(args, "output_github_branch_template", "") or "").strip():
+                github_repo_dir = ensure_client_github_git_repo(args, repo_id, args.github_branch, paths)
         except Exception as git_exc:
             if args.backend != "auto":
                 raise
@@ -467,7 +540,10 @@ def fetch_outputs(args: argparse.Namespace) -> dict[str, str]:
             )
     for path in paths:
         try:
-            if github_repo_dir is not None:
+            if client_prefers_github(args) and str(getattr(args, "output_github_branch_template", "") or "").strip():
+                branch = output_github_branch(args, node_from_output_path(path))
+                text = github_git_download_text(args, repo_id, path, branch)
+            elif github_repo_dir is not None:
                 local_path = github_repo_dir / path
                 if not local_path.is_file():
                     raise FileNotFoundError(f"{repo_id}/{path} not found in git worktree")
@@ -747,6 +823,14 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--prefix", default="", help="Optional output prefix used by --operator_output_prefix.")
     parser.add_argument("--cache-dir", default="~/.cache/operator-client", help="Local HF/Git cache.")
     parser.add_argument("--github-branch", default="main", help="GitHub branch for --backend github.")
+    parser.add_argument(
+        "--output-github-branch-template",
+        default="operator-output-node-{node}",
+        help=(
+            "GitHub branch template used for output files. Use {node} for node label. "
+            "Set empty to fetch outputs from --github-branch."
+        ),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

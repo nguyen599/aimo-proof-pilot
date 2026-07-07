@@ -19,7 +19,7 @@ import tempfile
 import threading
 import time
 import traceback
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -103,6 +103,14 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
         "--operator_github_branch",
         default="main",
         help="GitHub branch for --operator_backend github.",
+    )
+    parser.add_argument(
+        "--operator_github_output_branch_template",
+        default="operator-output-node-{node}",
+        help=(
+            "GitHub branch template for operator output files. Use {node} for the node label. "
+            "Set empty to write outputs to --operator_github_branch."
+        ),
     )
     parser.add_argument(
         "--operator_output_prefix",
@@ -259,6 +267,18 @@ def run_github_git(args: list[str], cwd: Path | None = None) -> str:
     return process.stdout.strip()
 
 
+def clone_github_git_repo(args: argparse.Namespace, repo_url: str, repo_dir: Path, branch: str) -> None:
+    try:
+        run_github_git(["clone", "--depth", "1", "--branch", branch, repo_url, str(repo_dir)])
+        return
+    except Exception:
+        if branch == getattr(args, "operator_github_branch", "main"):
+            raise
+    base_branch = str(getattr(args, "operator_github_branch", "main"))
+    run_github_git(["clone", "--depth", "1", "--branch", base_branch, repo_url, str(repo_dir)])
+    run_github_git(["checkout", "-B", branch], cwd=repo_dir)
+
+
 def operator_github_git_dir(args: argparse.Namespace, repo: str) -> Path:
     node_label = operator_node_label(args)
     repo_slug = hashlib.sha256(repo.encode("utf-8")).hexdigest()[:12]
@@ -290,7 +310,7 @@ def ensure_github_git_repo(args: argparse.Namespace, repo: str, branch: str) -> 
             import shutil
 
             shutil.rmtree(repo_dir)
-        run_github_git(["clone", "--depth", "1", "--branch", branch, repo_url, str(repo_dir)])
+        clone_github_git_repo(args, repo_url, repo_dir, branch)
         run_github_git(["config", "user.email", "operator@local"], cwd=repo_dir)
         run_github_git(["config", "user.name", "operator"], cwd=repo_dir)
         run_github_git(["config", "commit.gpgsign", "false"], cwd=repo_dir)
@@ -300,14 +320,19 @@ def ensure_github_git_repo(args: argparse.Namespace, repo: str, branch: str) -> 
         run_github_git(["config", "commit.gpgsign", "false"], cwd=repo_dir)
         run_github_git(["reset", "--hard"], cwd=repo_dir)
         run_github_git(["clean", "-fd"], cwd=repo_dir)
-        run_github_git(["fetch", "--depth", "1", "origin", branch], cwd=repo_dir)
-        run_github_git(["checkout", "-B", branch, f"origin/{branch}"], cwd=repo_dir)
-        run_github_git(["reset", "--hard", f"origin/{branch}"], cwd=repo_dir)
+        try:
+            run_github_git(["fetch", "--depth", "1", "origin", branch], cwd=repo_dir)
+            run_github_git(["checkout", "-B", branch, f"origin/{branch}"], cwd=repo_dir)
+            run_github_git(["reset", "--hard", f"origin/{branch}"], cwd=repo_dir)
+        except Exception:
+            base_branch = str(getattr(args, "operator_github_branch", "main"))
+            run_github_git(["fetch", "--depth", "1", "origin", base_branch], cwd=repo_dir)
+            run_github_git(["checkout", "-B", branch, f"origin/{base_branch}"], cwd=repo_dir)
     except Exception:
         import shutil
 
         shutil.rmtree(repo_dir, ignore_errors=True)
-        run_github_git(["clone", "--depth", "1", "--branch", branch, repo_url, str(repo_dir)])
+        clone_github_git_repo(args, repo_url, repo_dir, branch)
         run_github_git(["config", "user.email", "operator@local"], cwd=repo_dir)
         run_github_git(["config", "user.name", "operator"], cwd=repo_dir)
         run_github_git(["config", "commit.gpgsign", "false"], cwd=repo_dir)
@@ -505,6 +530,13 @@ def operator_output_repo_path(args: argparse.Namespace, node_label: str) -> str:
         if part.strip()
     )
     return f"{prefix}/{filename}" if prefix else filename
+
+
+def operator_output_github_branch(args: argparse.Namespace, node_label: str) -> str:
+    template = str(getattr(args, "operator_github_output_branch_template", "") or "").strip()
+    if not template:
+        return str(getattr(args, "operator_github_branch", "main"))
+    return sanitize_slug_part(template.format(node=node_label))
 
 
 def operator_inactive_output_repo_path(
@@ -863,6 +895,8 @@ def replacement_operator_command(args: argparse.Namespace) -> list[str]:
         str(args.operator_key_file),
         "--operator_github_branch",
         str(args.operator_github_branch),
+        "--operator_github_output_branch_template",
+        str(getattr(args, "operator_github_output_branch_template", "operator-output-node-{node}")),
         "--operator_poll_interval_seconds",
         str(args.operator_poll_interval_seconds),
         "--operator_live_upload_interval_seconds",
@@ -1381,13 +1415,20 @@ def upload_operator_output(
                     slot_seconds = min(stagger_seconds, (node_index % 8) * (stagger_seconds / 8.0))
                     jitter_seconds = random.uniform(0.0, min(1.5, stagger_seconds / 4.0))
                     time.sleep(slot_seconds + jitter_seconds)
-                with operator_output_upload_queue(args, timeout_seconds=queue_timeout_seconds):
+                output_branch = operator_output_github_branch(args, node_label)
+                main_branch = str(getattr(args, "operator_github_branch", "main"))
+                upload_context = (
+                    operator_output_upload_queue(args, timeout_seconds=queue_timeout_seconds)
+                    if output_branch == main_branch
+                    else nullcontext()
+                )
+                with upload_context:
                     upload_github_git_file(
                         args,
                         repo_id,
                         target_path,
                         upload_path,
-                        args.operator_github_branch,
+                        output_branch,
                         message,
                         max_attempts=20,
                     )
