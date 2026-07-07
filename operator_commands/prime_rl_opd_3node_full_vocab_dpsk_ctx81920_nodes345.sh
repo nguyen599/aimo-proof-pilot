@@ -108,10 +108,10 @@ fi
 
 MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/tmp/models/opd-32b-deploy/opd-32b-deploy}"
 TEACHER_MODEL_PATH="${PRIME_OPD_TEACHER_MODEL_PATH:-/tmp/models/dpsk-v4-flash}"
-RUNTIME_ROOT="${PRIME_3NODE_RUNTIME_ROOT:-/tmp/aimo-proof-pilot-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
-OPEN_INSTRUCT_RUNTIME_ROOT="${PRIME_3NODE_OPEN_INSTRUCT_RUNTIME_ROOT:-/tmp/open-instruct-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
-OLMO_CORE_RUNTIME_ROOT="${PRIME_3NODE_OLMO_CORE_RUNTIME_ROOT:-/tmp/OLMo-core-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
-PRIME_RL_RUNTIME_ROOT="${PRIME_3NODE_PRIME_RL_RUNTIME_ROOT:-/tmp/prime-rl-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
+RUNTIME_ROOT="${PRIME_3NODE_RUNTIME_ROOT:-/dev/shm/aimo-proof-pilot-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
+OPEN_INSTRUCT_RUNTIME_ROOT="${PRIME_3NODE_OPEN_INSTRUCT_RUNTIME_ROOT:-/dev/shm/open-instruct-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
+OLMO_CORE_RUNTIME_ROOT="${PRIME_3NODE_OLMO_CORE_RUNTIME_ROOT:-/dev/shm/OLMo-core-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
+PRIME_RL_RUNTIME_ROOT="${PRIME_3NODE_PRIME_RL_RUNTIME_ROOT:-/dev/shm/prime-rl-runtime-${RUN_NAME}-${PRIME_COMPONENT_ROLE}}"
 DATASET_PATH="${PRIME_OPD_DATASET_PATH:-${RUNTIME_ROOT}/imo_data_1959_2024.csv}"
 VERIFIABLE_DATASET_PATH="${PRIME_OPD_VERIFIABLE_DATASET_PATH:-${RUNTIME_ROOT}/astralbench.csv}"
 EVAL_VERIFIABLE_DATASET_PATH="${PRIME_OPD_EVAL_VERIFIABLE_DATASET_PATH:-${RUNTIME_ROOT}/aime_2026.csv}"
@@ -146,14 +146,14 @@ TRAIN_PY_ENV=(
 COMMON_ARGS=(
   --fetch-update
   --submissions-repo "${SUBMISSIONS_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}"
-  --submissions-ref "${SUBMISSIONS_REF:-main}"
+  --submissions-ref "${SUBMISSIONS_REF:-5c8b997efbae56220c3ee898560db1abc1a1a964}"
   --prime-rl-ref "${PRIME_RL_REF:-main}"
   --submissions-runtime-dir "${RUNTIME_ROOT}"
   --open-instruct-runtime-dir "${OPEN_INSTRUCT_RUNTIME_ROOT}"
   --olmo-core-runtime-dir "${OLMO_CORE_RUNTIME_ROOT}"
   --prime-rl-runtime-dir "${PRIME_RL_RUNTIME_ROOT}"
-  --runtime-fetch-state-dir "/tmp/train-runtime-fetch-${RUN_NAME}-${PRIME_COMPONENT_ROLE}"
-  --runtime-training-deps-dir "/tmp/olmo-train-runtime-deps-${RUN_NAME}-${PRIME_COMPONENT_ROLE}"
+  --runtime-fetch-state-dir "/dev/shm/train-runtime-fetch-${RUN_NAME}-${PRIME_COMPONENT_ROLE}"
+  --runtime-training-deps-dir "/dev/shm/olmo-train-runtime-deps-${RUN_NAME}-${PRIME_COMPONENT_ROLE}"
   --node_rank 0
   --num_nodes 1
   --backend prime_rl
