@@ -110,10 +110,11 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--operator_github_command_download_mode",
         default="raw",
-        choices=("raw", "api", "auto"),
+        choices=("raw", "api", "git", "auto"),
         help=(
             "How GitHub operators fetch the command file. 'raw' avoids REST API "
             "rate-limit burn during idle polling; 'api' uses the contents API; "
+            "'git' fetches through a local git checkout to avoid raw CDN staleness; "
             "'auto' tries raw first then API fallback."
         ),
     )
@@ -1436,6 +1437,13 @@ def upload_hf_operator_file(repo_id: str, path_in_repo: str, local_path: Path, m
 def download_operator_command(args: argparse.Namespace, work_dir: Path) -> str:
     if operator_prefers_github(args):
         mode = str(getattr(args, "operator_github_command_download_mode", "raw") or "raw").lower()
+        if mode == "git":
+            return download_github_git_text(
+                args,
+                args.operator_command_repo,
+                args.operator_command_file,
+                args.operator_github_branch,
+            )
         if mode == "api":
             try:
                 return download_github_api_text(
