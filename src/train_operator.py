@@ -120,6 +120,24 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--operator_initial_live_upload",
+        default="false",
+        choices=("true", "false"),
+        help=(
+            "Upload the command output file immediately before the child command starts. "
+            "Disabled by default to avoid blank output commits and Git push contention."
+        ),
+    )
+    parser.add_argument(
+        "--operator_update_latest_output",
+        default="false",
+        choices=("true", "false"),
+        help=(
+            "Also update output_node<N>.txt in addition to the command-specific "
+            "output_node<N>_<command>.txt file. Disabled by default to halve Git output commits."
+        ),
+    )
+    parser.add_argument(
         "--operator_upload_inactive_outputs",
         default="false",
         choices=("true", "false"),
@@ -150,7 +168,7 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--operator_output_upload_stagger_seconds",
         type=float,
-        default=10.0,
+        default=6.0,
         help=(
             "Maximum deterministic per-node delay before Git output uploads. "
             "This prevents all nodes from pushing output_node files at the same instant."
@@ -777,6 +795,10 @@ def replacement_operator_command(args: argparse.Namespace) -> list[str]:
         str(args.operator_poll_interval_seconds),
         "--operator_live_upload_interval_seconds",
         str(args.operator_live_upload_interval_seconds),
+        "--operator_initial_live_upload",
+        str(getattr(args, "operator_initial_live_upload", "false")),
+        "--operator_update_latest_output",
+        str(getattr(args, "operator_update_latest_output", "false")),
         "--operator_upload_inactive_outputs",
         str(getattr(args, "operator_upload_inactive_outputs", "false")),
         "--operator_exit_on_key_mismatch",
@@ -784,7 +806,7 @@ def replacement_operator_command(args: argparse.Namespace) -> list[str]:
         "--operator_output_upload_max_bytes",
         str(args.operator_output_upload_max_bytes),
         "--operator_output_upload_stagger_seconds",
-        str(getattr(args, "operator_output_upload_stagger_seconds", 10.0)),
+        str(getattr(args, "operator_output_upload_stagger_seconds", 6.0)),
         "--operator_work_dir",
         str(args.operator_work_dir),
         "--logdir",
@@ -1812,6 +1834,7 @@ def start_operator_action(
         encoding="utf-8",
     )
     live_upload_interval = max(0.0, float(args.operator_live_upload_interval_seconds))
+    update_latest_output = str(getattr(args, "operator_update_latest_output", "false")).lower() == "true"
 
     def live_upload(path: Path) -> None:
         with upload_lock:
@@ -1821,10 +1844,11 @@ def start_operator_action(
                 node_label,
                 path_in_repo=operator_command_output_repo_path(args, node_label, command_hash),
             )
-            if latest_command_hash["value"] == command_hash:
+            if update_latest_output and latest_command_hash["value"] == command_hash:
                 upload_operator_output(args, path, node_label)
 
-    if live_upload_interval > 0:
+    initial_live_upload = str(getattr(args, "operator_initial_live_upload", "false")).lower() == "true"
+    if initial_live_upload and live_upload_interval > 0:
         try:
             live_upload(output_path)
         except Exception:
@@ -1902,7 +1926,8 @@ def finalize_operator_action(
                 args, node_label, active.command_hash
             ),
         )
-        if latest_command_hash["value"] == active.command_hash:
+        update_latest_output = str(getattr(args, "operator_update_latest_output", "false")).lower() == "true"
+        if update_latest_output and latest_command_hash["value"] == active.command_hash:
             upload_operator_output(args, active.output_path, node_label)
 
 
