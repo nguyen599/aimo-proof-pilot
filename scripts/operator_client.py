@@ -244,8 +244,19 @@ def github_git_upload_text(
             return
         except Exception as exc:
             last_error = exc
+            try:
+                run_github_git(["fetch", "--depth", "1", "origin", branch], cwd=repo_dir)
+                run_github_git(["rebase", f"origin/{branch}"], cwd=repo_dir)
+                run_github_git(["push", "origin", branch], cwd=repo_dir)
+                return
+            except Exception as rebase_exc:
+                last_error = rebase_exc
+                try:
+                    run_github_git(["rebase", "--abort"], cwd=repo_dir)
+                except Exception:
+                    pass
             if attempt >= max_attempts:
-                raise GitPushConflict(str(exc)) from exc
+                raise GitPushConflict(str(last_error)) from last_error
             print(
                 (
                     f"[operator_client] Git push conflict for {repo}/{path_in_repo}; "
@@ -254,7 +265,8 @@ def github_git_upload_text(
                 file=sys.stderr,
                 flush=True,
             )
-            time.sleep(min(45.0, 1.5 * attempt) + random.uniform(0.0, 12.0))
+            reset_github_git_worktree(repo_dir, branch)
+            time.sleep(min(10.0, 0.5 * attempt) + random.uniform(0.0, 2.0))
     raise GitPushConflict(f"Git upload failed after {max_attempts} attempts: {last_error}")
 
 
