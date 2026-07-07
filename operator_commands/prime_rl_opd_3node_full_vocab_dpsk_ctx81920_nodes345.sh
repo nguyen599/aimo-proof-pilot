@@ -193,7 +193,7 @@ COMMON_ARGS=(
   --prime_gpus_per_node 8
   --prime_trainer_model_impl custom
   --prime_trainer_attn olmo3_sink_fa3
-  --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-8}"
+  --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-1}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
   --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
