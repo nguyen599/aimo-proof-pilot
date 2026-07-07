@@ -1675,6 +1675,8 @@ def prime_rl_config_requirements(prime_rl_dir: Path) -> list[str]:
     requirements = []
     for relative_path in (
         "deps/pydantic-config",
+        "deps/verifiers",
+        "deps/renderers",
         "packages/prime-rl-configs",
     ):
         package_dir = prime_rl_dir / relative_path
@@ -2535,26 +2537,30 @@ def prepare_runtime_training_dependencies(
         prime_rl_dir = Path(prime_rl_dir_value)
         runtime_requirements = prime_rl_runtime_requirements()
         if runtime_requirements:
-            install_python_global_requirements(runtime_requirements, "Prime-RL runtime")
+            install_python_requirements(runtime_requirements, site_dir, "Prime-RL runtime", no_deps=False)
         prepare_prime_rl_checkout_for_install(prime_rl_dir)
-        install_python_global_requirements(prime_rl_build_requirements(), "Prime-RL build")
+        install_python_requirements(prime_rl_build_requirements(), site_dir, "Prime-RL build", no_deps=False)
         remove_incompatible_prime_rl_config_package()
-        install_python_global_requirements(
+        install_python_requirements(
             prime_rl_config_requirements(prime_rl_dir),
+            site_dir,
             "Prime-RL configs",
-            editable=True,
             no_build_isolation=True,
+            no_deps=False,
         )
-        install_python_global_requirements(
+        install_python_requirements(
             prime_rl_environment_requirements(prime_rl_dir),
+            site_dir,
             "Prime-RL environments",
-            editable=True,
             no_build_isolation=True,
+            no_deps=False,
         )
-        install_python_global_requirements(
+        install_python_requirements(
             prime_rl_install_requirements(prime_rl_dir),
+            site_dir,
             "Prime-RL package",
             no_build_isolation=True,
+            no_deps=True,
             cwd=prime_rl_dir,
         )
         install_python_global_requirements(
