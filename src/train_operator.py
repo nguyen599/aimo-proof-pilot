@@ -933,6 +933,15 @@ def operator_env_overrides(command_payload: dict[str, object]) -> dict[str, str]
     return env
 
 
+def add_operator_node_env_defaults(args: argparse.Namespace, env: dict[str, str]) -> dict[str, str]:
+    """Expose the operator node label to child scripts unless explicitly overridden."""
+    node_label = operator_node_label(args)
+    env.setdefault("GLOBAL_RANK", node_label)
+    env.setdefault("NODE_RANK", node_label)
+    env.setdefault("RANK", node_label)
+    return env
+
+
 def operator_cwd(command_payload: dict[str, object]) -> str | None:
     raw_cwd = command_payload.get("cwd")
     if raw_cwd is None or raw_cwd == "":
@@ -1216,6 +1225,7 @@ def run_operator_action(
 ) -> tuple[int, str, bool]:
     action = str(command_payload.get("action", "")).strip()
     env_overrides = operator_env_overrides(command_payload)
+    env_overrides = add_operator_node_env_defaults(args, env_overrides)
     cwd = operator_cwd(command_payload)
     live_upload_interval = max(0.0, float(getattr(args, "operator_live_upload_interval_seconds", 0.0)))
     if action in {"", "noop", "NOOP"}:
