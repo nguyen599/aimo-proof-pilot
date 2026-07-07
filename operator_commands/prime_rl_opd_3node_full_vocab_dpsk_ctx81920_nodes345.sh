@@ -296,6 +296,12 @@ case "${PRIME_COMPONENT_ROLE}" in
 
   teacher_inference)
     export OLMO_RUN_DIR_NAME="${RUN_NAME}_teacher_node${NODE_LABEL}"
+    # The pinned vLLM wheel can route TP allreduce+RMS fusion through
+    # flashinfer.comm, which imports tilelang's libcudart stub on this cluster
+    # and fails with missing cudaDeviceReset. Keep the DeepGEMM linear backend
+    # for DeepSeek-V4-Flash, but avoid FlashInfer allreduce fusion here.
+    export VLLM_FLASHINFER_ALLREDUCE_BACKEND="${PRIME_OPD_TEACHER_VLLM_FLASHINFER_ALLREDUCE_BACKEND:-trtllm}"
+    export VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE="${PRIME_OPD_TEACHER_VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE:-2147483648}"
     exec "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
       --prime_component teacher_inference \
       --prime_train_gpus 0 \
@@ -315,7 +321,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-24}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
-      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\"}}"
+      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\",\"disable_custom_all_reduce\":true}}"
     ;;
 
   trainer_orchestrator)
