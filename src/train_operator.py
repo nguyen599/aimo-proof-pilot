@@ -108,6 +108,16 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
         help="GitHub branch for --operator_backend github.",
     )
     parser.add_argument(
+        "--operator_github_command_download_mode",
+        default="raw",
+        choices=("raw", "api", "auto"),
+        help=(
+            "How GitHub operators fetch the command file. 'raw' avoids REST API "
+            "rate-limit burn during idle polling; 'api' uses the contents API; "
+            "'auto' tries raw first then API fallback."
+        ),
+    )
+    parser.add_argument(
         "--operator_github_output_branch_template",
         default="operator-output-node-{node}",
         help=(
@@ -383,6 +393,8 @@ def download_github_raw_text(repo: str, path_in_repo: str, branch: str) -> str:
     url = f"https://raw.githubusercontent.com/{repo.strip('/')}/{branch}/{path_in_repo.strip('/')}"
     headers = {
         "Accept": "application/vnd.github.raw",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
         "User-Agent": "train-operator",
     }
     if token:
@@ -946,6 +958,8 @@ def replacement_operator_command(args: argparse.Namespace) -> list[str]:
         str(args.operator_key_file),
         "--operator_github_branch",
         str(args.operator_github_branch),
+        "--operator_github_command_download_mode",
+        str(getattr(args, "operator_github_command_download_mode", "raw")),
         "--operator_github_output_branch_template",
         str(getattr(args, "operator_github_output_branch_template", "operator-output-node-{node}")),
         "--operator_poll_interval_seconds",
@@ -1233,14 +1247,16 @@ def upload_hf_operator_file(repo_id: str, path_in_repo: str, local_path: Path, m
 
 def download_operator_command(args: argparse.Namespace, work_dir: Path) -> str:
     if operator_prefers_github(args):
-        try:
-            return download_github_api_text(
-                args.operator_command_repo,
-                args.operator_command_file,
-                args.operator_github_branch,
-            )
-        except Exception:
-            logging.exception("GitHub API command download failed; falling back to raw GitHub.")
+        mode = str(getattr(args, "operator_github_command_download_mode", "raw") or "raw").lower()
+        if mode == "api":
+            try:
+                return download_github_api_text(
+                    args.operator_command_repo,
+                    args.operator_command_file,
+                    args.operator_github_branch,
+                )
+            except Exception:
+                logging.exception("GitHub API command download failed; falling back to raw GitHub.")
         try:
             return download_github_raw_text(
                 args.operator_command_repo,
@@ -1248,6 +1264,15 @@ def download_operator_command(args: argparse.Namespace, work_dir: Path) -> str:
                 args.operator_github_branch,
             )
         except Exception:
+            if mode == "auto":
+                try:
+                    return download_github_api_text(
+                        args.operator_command_repo,
+                        args.operator_command_file,
+                        args.operator_github_branch,
+                    )
+                except Exception:
+                    logging.exception("GitHub API command download fallback failed.")
             logging.exception("Raw GitHub command download failed; falling back to Git checkout.")
     return download_operator_repo_text(args, work_dir, args.operator_command_file)
 
