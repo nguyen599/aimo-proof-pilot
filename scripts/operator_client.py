@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import random
 import re
 import shlex
 import subprocess
@@ -74,10 +75,16 @@ def github_git_env() -> dict[str, str]:
     token = env.get("GITHUB_TOKEN", "").strip()
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_LFS_SKIP_SMUDGE"] = "1"
+    git_config_entries = [
+        ("commit.gpgsign", "false"),
+        ("tag.gpgsign", "false"),
+    ]
     if token:
-        env["GIT_CONFIG_COUNT"] = "1"
-        env["GIT_CONFIG_KEY_0"] = f"url.https://{token}@github.com/.insteadOf"
-        env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+        git_config_entries.append((f"url.https://{token}@github.com/.insteadOf", "https://github.com/"))
+    env["GIT_CONFIG_COUNT"] = str(len(git_config_entries))
+    for idx, (key, value) in enumerate(git_config_entries):
+        env[f"GIT_CONFIG_KEY_{idx}"] = key
+        env[f"GIT_CONFIG_VALUE_{idx}"] = value
     return env
 
 
@@ -247,7 +254,7 @@ def github_git_upload_text(
                 file=sys.stderr,
                 flush=True,
             )
-            time.sleep(min(5.0, 0.5 * attempt))
+            time.sleep(min(45.0, 1.5 * attempt) + random.uniform(0.0, 12.0))
     raise GitPushConflict(f"Git upload failed after {max_attempts} attempts: {last_error}")
 
 
@@ -431,9 +438,30 @@ def fetch_outputs(args: argparse.Namespace) -> dict[str, str]:
     out_dir = Path(args.out_dir).expanduser() if args.out_dir else None
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
+    github_repo_dir: Path | None = None
+    if client_prefers_github(args):
+        try:
+            github_repo_dir = ensure_client_github_git_repo(args, repo_id, args.github_branch, paths)
+        except Exception as git_exc:
+            if args.backend != "auto":
+                raise
+            print(
+                (
+                    f"[operator_client] Git batch fetch failed for {repo_id}; "
+                    f"falling back to per-file HF because --backend auto: {git_exc}"
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
     for path in paths:
         try:
-            text = download_repo_file(args, repo_id, path)
+            if github_repo_dir is not None:
+                local_path = github_repo_dir / path
+                if not local_path.is_file():
+                    raise FileNotFoundError(f"{repo_id}/{path} not found in git worktree")
+                text = local_path.read_text(encoding="utf-8", errors="replace")
+            else:
+                text = download_repo_file(args, repo_id, path)
         except FileNotFoundError as exc:
             text = f"[operator_client] missing output file {repo_id}/{path}: {exc}\n"
         outputs[path] = text
