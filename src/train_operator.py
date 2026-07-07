@@ -1326,6 +1326,16 @@ def claim_operator_key(
     for attempt in range(1, max_attempts + 1):
         try:
             registry = download_operator_key_registry(args, work_dir, node_label)
+            raw_record = operator_registry_record_for_node(registry, node_label)
+            active_key = operator_registry_key_for_node(registry, node_label)
+            if active_key and not operator_record_is_stale_for_local(raw_record, started_utc):
+                remote_started = operator_record_started_utc(raw_record) or "<missing>"
+                raise RuntimeError(
+                    (
+                        f"Refusing to overwrite newer operator key for node {node_label}: "
+                        f"local_started={started_utc} remote_started={remote_started} remote_key={active_key}"
+                    )
+                )
             set_operator_key_record(registry, node_label, operator_key, started_utc)
             upload_operator_repo_text(
                 args,
