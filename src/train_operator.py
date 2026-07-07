@@ -1264,7 +1264,21 @@ def run_operator_action(
 def download_operator_repo_text(args: argparse.Namespace, work_dir: Path, path_in_repo: str) -> str:
     if operator_prefers_github(args):
         try:
-            return download_github_api_text(
+            return download_github_raw_text(
+                args.operator_command_repo,
+                path_in_repo,
+                args.operator_github_branch,
+            )
+        except Exception as raw_exc:
+            logging.warning(
+                "Raw GitHub operator download failed for %s/%s; falling back to Git checkout: %s",
+                args.operator_command_repo,
+                path_in_repo,
+                raw_exc,
+            )
+        try:
+            return download_github_git_text(
+                args,
                 args.operator_command_repo,
                 path_in_repo,
                 args.operator_github_branch,
@@ -1273,7 +1287,7 @@ def download_operator_repo_text(args: argparse.Namespace, work_dir: Path, path_i
             if getattr(args, "operator_backend", "github") != "auto":
                 raise
             logging.warning(
-                "GitHub API operator download failed for %s/%s; falling back to HF because --operator_backend auto: %s",
+                "Git operator download failed for %s/%s; falling back to HF because --operator_backend auto: %s",
                 args.operator_command_repo,
                 path_in_repo,
                 git_exc,
