@@ -263,6 +263,12 @@ COMMON_ARGS=(
 case "${PRIME_COMPONENT_ROLE}" in
   policy_inference)
     export OLMO_RUN_DIR_NAME="${RUN_NAME}_policy_node${NODE_LABEL}"
+    # vLLM 0.23/0.24 can choose FlashInfer MNNVL fused allreduce+RMSNorm during
+    # cudagraph profiling for this TP=8 OLMo3Sink policy. The default MNNVL
+    # workspace is too small for the 98k serving context, so prefer TRTLLM's
+    # allreduce fusion backend and give FlashInfer a large workspace.
+    export VLLM_FLASHINFER_ALLREDUCE_BACKEND="${PRIME_VLLM_FLASHINFER_ALLREDUCE_BACKEND:-trtllm}"
+    export VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE="${PRIME_VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE:-2147483648}"
     exec "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
       --prime_component policy_inference \
       --prime_policy_port "${POLICY_PORT}" \
