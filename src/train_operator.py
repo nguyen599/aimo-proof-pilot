@@ -1763,7 +1763,8 @@ def upload_operator_output(
                     else nullcontext()
                 )
                 with upload_context:
-                    upload_github_api_file(
+                    upload_github_git_file(
+                        args,
                         repo_id,
                         target_path,
                         upload_path,
