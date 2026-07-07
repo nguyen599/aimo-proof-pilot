@@ -120,6 +120,24 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--operator_upload_inactive_outputs",
+        default="false",
+        choices=("true", "false"),
+        help=(
+            "Upload an output file when an older operator process sees a command but no longer owns "
+            "the node key. Disabled by default because stale operators can create heavy Git push contention."
+        ),
+    )
+    parser.add_argument(
+        "--operator_exit_on_key_mismatch",
+        default="true",
+        choices=("true", "false"),
+        help=(
+            "Exit an older operator process after a newer operator has claimed the node key. "
+            "This keeps restarts from leaving passive processes that keep polling and uploading."
+        ),
+    )
+    parser.add_argument(
         "--operator_output_upload_max_bytes",
         type=int,
         default=8 * 1024 * 1024,
@@ -335,7 +353,8 @@ def upload_github_git_file(
                     max_attempts,
                 )
                 shutil.rmtree(repo_dir, ignore_errors=True)
-                time.sleep(min(8.0, 0.5 * attempt) + random.random())
+                backoff_seconds = min(45.0, 1.5 * attempt)
+                time.sleep(backoff_seconds + random.uniform(0.0, 12.0))
     raise GitPushConflict(f"Git upload failed after {max_attempts} attempts: {last_error}")
 
 
@@ -749,6 +768,10 @@ def replacement_operator_command(args: argparse.Namespace) -> list[str]:
         str(args.operator_poll_interval_seconds),
         "--operator_live_upload_interval_seconds",
         str(args.operator_live_upload_interval_seconds),
+        "--operator_upload_inactive_outputs",
+        str(getattr(args, "operator_upload_inactive_outputs", "false")),
+        "--operator_exit_on_key_mismatch",
+        str(getattr(args, "operator_exit_on_key_mismatch", "true")),
         "--operator_output_upload_max_bytes",
         str(args.operator_output_upload_max_bytes),
         "--operator_work_dir",
@@ -1877,6 +1900,18 @@ def upload_inactive_operator_output(
     command_payload: dict[str, object],
     upload_lock: threading.Lock,
 ) -> None:
+    if getattr(args, "operator_upload_inactive_outputs", "false") != "true":
+        logging.info(
+            (
+                "Skipping inactive operator output upload for node=%s local_key=%s remote_key=%s "
+                "command=%s because --operator_upload_inactive_outputs=false."
+            ),
+            node_label,
+            operator_key,
+            remote_key or "<missing>",
+            command_hash[:12],
+        )
+        return
     output_path = (
         work_dir
         / "commands"
@@ -2028,6 +2063,14 @@ def run_operator_mode(args: argparse.Namespace) -> None:
                         command_payload,
                         upload_lock,
                     )
+                    if getattr(args, "operator_exit_on_key_mismatch", "true") == "true":
+                        logging.warning(
+                            "Operator key mismatch for node=%s; exiting stale operator local_key=%s remote_key=%s.",
+                            node_label,
+                            operator_key,
+                            active_key or "<missing>",
+                        )
+                        return
                     time.sleep(poll_interval)
                     continue
 

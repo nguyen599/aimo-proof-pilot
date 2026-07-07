@@ -683,6 +683,8 @@ def prepare_wrapper_run_directory(forwarded_args: list[str]) -> None:
 def resolve_wrapper_node_rank(forwarded_args: list[str]) -> int | None:
     forwarded_rank_value = forwarded_option_value(forwarded_args, "--node_rank", "--node-rank")
     cli_rank = parse_int(forwarded_rank_value)
+    if cli_rank is not None and wrapper_num_nodes(forwarded_args) <= 1:
+        return cli_rank
     for env_name in ("NODE_RANK", "GLOBAL_RANK", "SLURM_NODEID", "OMPI_COMM_WORLD_RANK"):
         rank = parse_int(os.environ.get(env_name))
         if rank is not None:
