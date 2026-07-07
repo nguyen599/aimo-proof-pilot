@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import fcntl
 import hashlib
 import json
@@ -394,6 +395,42 @@ def download_github_raw_text(repo: str, path_in_repo: str, branch: str) -> str:
         if exc.code == 404:
             raise FileNotFoundError(f"{repo}/{path_in_repo} not found on branch {branch}") from exc
         raise
+
+
+def download_github_api_text(repo: str, path_in_repo: str, branch: str) -> str:
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    quoted_path = "/".join(
+        urllib_request.pathname2url(part) for part in path_in_repo.strip("/").split("/")
+    )
+    url = (
+        f"https://api.github.com/repos/{repo.strip('/')}/contents/{quoted_path}"
+        f"?ref={urllib_request.pathname2url(branch)}"
+    )
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "train-operator",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib_request.Request(url, headers=headers)
+    try:
+        with urllib_request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except HTTPError as exc:
+        if exc.code == 404:
+            raise FileNotFoundError(f"{repo}/{path_in_repo} not found on branch {branch}") from exc
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API GET {url} failed: HTTP {exc.code}: {detail}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"GitHub API GET {url} returned non-object payload")
+    content = payload.get("content")
+    if not isinstance(content, str):
+        raise RuntimeError(f"GitHub API GET {url} returned no text content")
+    encoding = payload.get("encoding")
+    if encoding != "base64":
+        raise RuntimeError(f"GitHub API GET {url} returned unsupported encoding {encoding!r}")
+    return base64.b64decode(content).decode("utf-8", errors="replace")
 
 
 def upload_github_git_file(
@@ -1196,6 +1233,14 @@ def upload_hf_operator_file(repo_id: str, path_in_repo: str, local_path: Path, m
 
 def download_operator_command(args: argparse.Namespace, work_dir: Path) -> str:
     if operator_prefers_github(args):
+        try:
+            return download_github_api_text(
+                args.operator_command_repo,
+                args.operator_command_file,
+                args.operator_github_branch,
+            )
+        except Exception:
+            logging.exception("GitHub API command download failed; falling back to raw GitHub.")
         try:
             return download_github_raw_text(
                 args.operator_command_repo,

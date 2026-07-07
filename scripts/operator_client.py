@@ -295,6 +295,85 @@ def github_raw_download_text(repo: str, path_in_repo: str, branch: str) -> str:
         raise
 
 
+def github_contents_api_json(
+    method: str,
+    repo: str,
+    path_in_repo: str,
+    branch: str,
+    payload: dict[str, object] | None = None,
+) -> dict[str, object] | None:
+    owner_repo = repo.strip("/")
+    quoted_path = "/".join(
+        urllib_request.pathname2url(part) for part in path_in_repo.strip("/").split("/")
+    )
+    url = f"https://api.github.com/repos/{owner_repo}/contents/{quoted_path}"
+    if method.upper() == "GET":
+        url = f"{url}?ref={urllib_request.pathname2url(branch)}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {github_token()}",
+        "User-Agent": "operator-client",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib_request.Request(url, data=data, headers=headers, method=method.upper())
+    try:
+        with urllib_request.urlopen(req, timeout=60) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        if exc.code == 404:
+            return None
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API {method} {url} failed: HTTP {exc.code}: {detail}") from exc
+    return json.loads(raw) if raw.strip() else {}
+
+
+def github_api_upload_text(
+    repo: str,
+    path_in_repo: str,
+    text: str,
+    branch: str,
+    message: str,
+    max_attempts: int = 8,
+) -> None:
+    encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    last_error: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        current = github_contents_api_json("GET", repo, path_in_repo, branch)
+        sha = current.get("sha") if isinstance(current, dict) else None
+        payload: dict[str, object] = {
+            "message": message,
+            "content": encoded,
+            "branch": branch,
+        }
+        if isinstance(sha, str) and sha:
+            payload["sha"] = sha
+        try:
+            github_contents_api_json("PUT", repo, path_in_repo, branch, payload)
+            return
+        except RuntimeError as exc:
+            last_error = exc
+            # 409 usually means command.sh changed between GET and PUT. Retry with
+            # a fresh file SHA; unrelated branch changes should not force a full
+            # Git checkout/rebase.
+            retryable = "HTTP 409" in str(exc) or "HTTP 422" in str(exc)
+            if not retryable or attempt >= max_attempts:
+                raise
+            print(
+                (
+                    f"[operator_client] GitHub API conflict for {repo}/{path_in_repo}; "
+                    f"retrying {attempt}/{max_attempts}"
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(min(5.0, 0.25 * attempt) + random.uniform(0.0, 0.5))
+    raise GitPushConflict(f"GitHub API upload failed after {max_attempts} attempts: {last_error}")
+
+
 def github_git_list_files(args: argparse.Namespace, repo: str, branch: str) -> list[str]:
     repo_dir = ensure_client_github_git_repo(args, repo, branch)
     output = run_github_git(["ls-tree", "-r", "--name-only", f"origin/{branch}"], cwd=repo_dir)
@@ -401,22 +480,21 @@ def send_command(args: argparse.Namespace, text: str | None = None) -> str:
     used_backend = args.backend
     if client_prefers_github(args):
         try:
-            github_git_upload_text(
-                args,
+            github_api_upload_text(
                 args.repo,
                 args.command_file,
                 uploaded_text,
                 args.github_branch,
                 f"Update operator command {args.command_file}",
             )
-            used_backend = "github-git"
-        except Exception as git_exc:
+            used_backend = "github-api"
+        except Exception as github_exc:
             if args.backend != "auto":
                 raise
             print(
                 (
-                    f"[operator_client] Git upload failed for {args.repo}/{args.command_file}; "
-                    f"falling back to HF because --backend auto: {git_exc}"
+                    f"[operator_client] GitHub API upload failed for {args.repo}/{args.command_file}; "
+                    f"falling back to HF because --backend auto: {github_exc}"
                 ),
                 file=sys.stderr,
                 flush=True,
