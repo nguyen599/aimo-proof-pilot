@@ -18,6 +18,13 @@ case "${NODE_LABEL}" in
     ;;
 esac
 
+ROLE_LOCK="/dev/shm/prime_rl_opd_3node_${NODE_LABEL}_${PRIME_COMPONENT_ROLE}.lock"
+exec 29>"${ROLE_LOCK}"
+if ! flock -n 29; then
+  echo "[prime-opd-3node] node=${NODE_LABEL} role=${PRIME_COMPONENT_ROLE} already running; lock=${ROLE_LOCK}; skipping duplicate operator."
+  exit 0
+fi
+
 if [[ -x /usr/local/cuda/bin/nvcc ]]; then
   export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
   export CUDA_PATH="${CUDA_PATH:-${CUDA_HOME}}"
@@ -43,18 +50,19 @@ mkdir -p "${RENDEZVOUS_DIR}"
 # Keep transient install/build/cache files off the shared /tmp Lustre mount.
 # /tmp is still used for tiny rendezvous files and Prime-RL filesystem weight
 # broadcast, because those paths must be visible from all three nodes.
-SHM_TMP_ROOT="${PRIME_3NODE_SHM_TMP_ROOT:-/dev/shm/prime_rl_opd_3node/${RUN_NAME}/${NODE_LABEL}_${PRIME_COMPONENT_ROLE}}"
+SHM_TMP_ROOT="${PRIME_3NODE_SHM_TMP_ROOT:-/dev/shm/pp3/${RUN_NAME}/${NODE_LABEL}_${PRIME_COMPONENT_ROLE}}"
 mkdir -p "${SHM_TMP_ROOT}"/{tmp,xdg,pip,triton,torchinductor,ray,vllm}
-export TMPDIR="${TMPDIR:-${SHM_TMP_ROOT}/tmp}"
-export TMP="${TMP:-${TMPDIR}}"
-export TEMP="${TEMP:-${TMPDIR}}"
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${SHM_TMP_ROOT}/xdg}"
-export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${SHM_TMP_ROOT}/pip}"
-export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${SHM_TMP_ROOT}/triton}"
-export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${SHM_TMP_ROOT}/torchinductor}"
-export RAY_TMPDIR="${RAY_TMPDIR:-${SHM_TMP_ROOT}/ray}"
-export VLLM_CACHE_ROOT="${VLLM_CACHE_ROOT:-${SHM_TMP_ROOT}/vllm}"
-export UV_CACHE_DIR="${UV_CACHE_DIR:-${SHM_TMP_ROOT}/uv}"
+export TMPDIR="${SHM_TMP_ROOT}/tmp"
+export TMP="${TMPDIR}"
+export TEMP="${TMPDIR}"
+export XDG_CACHE_HOME="${SHM_TMP_ROOT}/xdg"
+export PIP_CACHE_DIR="${SHM_TMP_ROOT}/pip"
+export TRITON_CACHE_DIR="${SHM_TMP_ROOT}/triton"
+export TORCHINDUCTOR_CACHE_DIR="${SHM_TMP_ROOT}/torchinductor"
+export RAY_TMPDIR="${SHM_TMP_ROOT}/ray"
+export VLLM_CACHE_ROOT="${SHM_TMP_ROOT}/vllm"
+export UV_CACHE_DIR="${SHM_TMP_ROOT}/uv"
+export VLLM_RPC_BASE_PATH="${SHM_TMP_ROOT}/rpc"
 
 HOST_NAME="$(hostname 2>/dev/null || echo unknown-host)"
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
