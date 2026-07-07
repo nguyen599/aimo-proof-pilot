@@ -2608,7 +2608,11 @@ def prepare_runtime_training_dependencies(
         if runtime_requirements:
             install_python_requirements(runtime_requirements, site_dir, "Prime-RL runtime", no_deps=False)
         prepare_prime_rl_checkout_for_install(prime_rl_dir)
-        install_python_requirements(prime_rl_build_requirements(), site_dir, "Prime-RL build", no_deps=False)
+        install_python_global_requirements(
+            prime_rl_build_requirements(),
+            "Prime-RL build",
+            no_deps=False,
+        )
         remove_incompatible_prime_rl_config_package()
         install_python_requirements(
             prime_rl_config_requirements(prime_rl_dir),
