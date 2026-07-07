@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import queue
+import random
 import re
 import secrets
 import shutil
@@ -283,7 +284,7 @@ def upload_github_git_file(
     local_path: Path,
     branch: str,
     message: str,
-    max_attempts: int = 1,
+    max_attempts: int = 8,
 ) -> None:
     last_error: BaseException | None = None
     with locked_github_git_repo(args, repo, branch):
@@ -313,8 +314,19 @@ def upload_github_git_file(
                 return
             except Exception as exc:
                 last_error = exc
+                try:
+                    run_github_git(["fetch", "--depth", "1", "origin", branch], cwd=repo_dir)
+                    run_github_git(["rebase", f"origin/{branch}"], cwd=repo_dir)
+                    run_github_git(["push", "origin", branch], cwd=repo_dir)
+                    return
+                except Exception as rebase_exc:
+                    last_error = rebase_exc
+                    try:
+                        run_github_git(["rebase", "--abort"], cwd=repo_dir)
+                    except Exception:
+                        pass
                 if attempt >= max_attempts:
-                    raise GitPushConflict(str(exc)) from exc
+                    raise GitPushConflict(str(last_error)) from last_error
                 logging.warning(
                     "Git push conflict for %s/%s; refreshing worktree and retrying (%d/%d).",
                     repo,
@@ -323,7 +335,7 @@ def upload_github_git_file(
                     max_attempts,
                 )
                 shutil.rmtree(repo_dir, ignore_errors=True)
-                time.sleep(min(2.0, 0.25 * attempt))
+                time.sleep(min(8.0, 0.5 * attempt) + random.random())
     raise GitPushConflict(f"Git upload failed after {max_attempts} attempts: {last_error}")
 
 
@@ -1225,7 +1237,7 @@ def upload_operator_output(
                     upload_path,
                     args.operator_github_branch,
                     message,
-                    max_attempts=5,
+                    max_attempts=20,
                 )
                 return
             except Exception as git_exc:
