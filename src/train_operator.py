@@ -148,6 +148,15 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--operator_output_upload_stagger_seconds",
+        type=float,
+        default=10.0,
+        help=(
+            "Maximum deterministic per-node delay before Git output uploads. "
+            "This prevents all nodes from pushing output_node files at the same instant."
+        ),
+    )
+    parser.add_argument(
         "--operator_work_dir",
         default="/tmp/olmo_operator",
         help="Writable local work directory for operator command downloads and output files.",
@@ -774,6 +783,8 @@ def replacement_operator_command(args: argparse.Namespace) -> list[str]:
         str(getattr(args, "operator_exit_on_key_mismatch", "true")),
         "--operator_output_upload_max_bytes",
         str(args.operator_output_upload_max_bytes),
+        "--operator_output_upload_stagger_seconds",
+        str(getattr(args, "operator_output_upload_stagger_seconds", 10.0)),
         "--operator_work_dir",
         str(args.operator_work_dir),
         "--logdir",
@@ -1253,6 +1264,15 @@ def upload_operator_output(
     try:
         if operator_prefers_github(args):
             try:
+                stagger_seconds = max(0.0, float(getattr(args, "operator_output_upload_stagger_seconds", 0.0)))
+                if stagger_seconds > 0:
+                    try:
+                        node_index = int(str(node_label))
+                    except ValueError:
+                        node_index = int(hashlib.sha256(str(node_label).encode("utf-8")).hexdigest()[:2], 16)
+                    slot_seconds = min(stagger_seconds, (node_index % 8) * (stagger_seconds / 8.0))
+                    jitter_seconds = random.uniform(0.0, min(1.5, stagger_seconds / 4.0))
+                    time.sleep(slot_seconds + jitter_seconds)
                 upload_github_git_file(
                     args,
                     repo_id,
@@ -1550,11 +1570,7 @@ def local_operator_process_matches(args: argparse.Namespace, pid: int, cmd: str)
         return False
     if "--operator_mode" not in cmd and "train_operator.py" not in cmd:
         return False
-    repo = str(getattr(args, "operator_command_repo", "") or "")
-    command_file = str(getattr(args, "operator_command_file", "") or "")
-    if repo and repo not in cmd:
-        return False
-    if command_file and command_file not in cmd:
+    if "operator_client.py" in cmd:
         return False
     return True
 
