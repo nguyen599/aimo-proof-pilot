@@ -745,6 +745,24 @@ def ensure_runtime_repo(repo: str, ref: str, runtime_dir: Path, label: str) -> P
     return runtime_dir
 
 
+def prime_rl_runtime_submodule_paths() -> list[str]:
+    override = os.environ.get("PRIME_RL_RUNTIME_SUBMODULE_PATHS")
+    if override:
+        paths = [path for path in shlex.split(override) if path]
+        if len(paths) == 1 and paths[0].lower() == "all":
+            return []
+        return paths
+
+    paths = [
+        "deps/pydantic-config",
+        "deps/verifiers",
+        "deps/renderers",
+    ]
+    if parse_bool(os.environ.get("PRIME_RL_INCLUDE_RESEARCH_ENVIRONMENTS"), False):
+        paths.append("deps/research-environments")
+    return paths
+
+
 def prepare_prime_rl_checkout_for_install(prime_rl_dir: Path) -> None:
     if not (prime_rl_dir / ".git").is_dir():
         raise RuntimeError(f"Prime-RL runtime dir is not a Git checkout: {prime_rl_dir}")
@@ -762,8 +780,20 @@ def prepare_prime_rl_checkout_for_install(prime_rl_dir: Path) -> None:
     for value in ("git@github.com:", "ssh://git@github.com/"):
         if value not in existing_values:
             run_git(["config", "--local", "--add", key, value], cwd=prime_rl_dir, retry=False)
-    run_git(["submodule", "sync", "--recursive"], cwd=prime_rl_dir, retry=False)
-    run_git(["submodule", "update", "--init", "--recursive"], cwd=prime_rl_dir, retry=False)
+
+    submodule_paths = prime_rl_runtime_submodule_paths()
+    if submodule_paths:
+        log("Prime-RL runtime submodules: " + " ".join(submodule_paths))
+        run_git(["submodule", "sync", "--", *submodule_paths], cwd=prime_rl_dir, retry=False)
+        run_git(
+            ["submodule", "update", "--init", "--depth", "1", "--", *submodule_paths],
+            cwd=prime_rl_dir,
+            retry=False,
+        )
+    else:
+        log("Prime-RL runtime submodules: all")
+        run_git(["submodule", "sync", "--recursive"], cwd=prime_rl_dir, retry=False)
+        run_git(["submodule", "update", "--init", "--recursive"], cwd=prime_rl_dir, retry=False)
     log("Prime-RL submodules are ready")
 
 
