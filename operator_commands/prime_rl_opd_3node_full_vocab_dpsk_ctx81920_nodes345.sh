@@ -25,10 +25,11 @@ LOCK_RUN_NAME="$(printf '%s' "${RUN_NAME}" | tr -c 'A-Za-z0-9_.-' '_')"
 # bash wrapper can keep holding the old role lock even though no Prime-RL
 # process is active. Clean only old role command shells for this same node.
 if [[ "${PRIME_3NODE_KILL_STALE_ROLE_SHELLS:-1}" == "1" ]]; then
+  CURRENT_COMMAND_SCRIPT="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
   mapfile -t STALE_ROLE_SHELL_PIDS < <(
     ps -eo pid=,args= \
-      | awk -v self="$$" -v node="${NODE_LABEL}" '
-          $1 != self && $0 ~ "/olmo_operator/node" node "/commands/.*/command.sh" { print $1 }
+      | awk -v self="$$" -v node="${NODE_LABEL}" -v current_script="${CURRENT_COMMAND_SCRIPT}" '
+          $1 != self && index($0, current_script) == 0 && $0 ~ "/olmo_operator/node" node "/commands/.*/command.sh" { print $1 }
         '
   )
   if (( ${#STALE_ROLE_SHELL_PIDS[@]} > 0 )); then
