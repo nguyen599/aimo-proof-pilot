@@ -2,7 +2,7 @@
 """Benchmark OLMo3Sink generation throughput with vLLM offline inference.
 
 Default workload:
-  - 8 GPUs as vLLM data parallel ranks (`TP=1, DP=8`)
+  - 8 independent one-GPU vLLM engines (`TP=1, DP=8`)
   - 16 concurrent prompts
   - about 1,024 prompt tokens per request
   - 131,072 total requested output tokens (8,192 per request)
@@ -422,11 +422,28 @@ def run_dp_rank(
     metrics_dir: str,
 ) -> None:
     args = argparse.Namespace(**args_dict)
-    os.environ["VLLM_DP_RANK"] = str(dp_rank)
-    os.environ["VLLM_DP_RANK_LOCAL"] = str(dp_rank)
-    os.environ["VLLM_DP_SIZE"] = str(dp_size)
-    os.environ["VLLM_DP_MASTER_IP"] = dp_master_ip
-    os.environ["VLLM_DP_MASTER_PORT"] = str(dp_master_port)
+    if args.dp_mode == "vllm-offline":
+        os.environ["VLLM_DP_RANK"] = str(dp_rank)
+        os.environ["VLLM_DP_RANK_LOCAL"] = str(dp_rank)
+        os.environ["VLLM_DP_SIZE"] = str(dp_size)
+        os.environ["VLLM_DP_MASTER_IP"] = dp_master_ip
+        os.environ["VLLM_DP_MASTER_PORT"] = str(dp_master_port)
+    else:
+        for key in ("VLLM_DP_RANK", "VLLM_DP_RANK_LOCAL", "VLLM_DP_SIZE", "VLLM_DP_MASTER_IP", "VLLM_DP_MASTER_PORT"):
+            os.environ.pop(key, None)
+        visible = [item.strip() for item in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if item.strip()]
+        tp = max(1, int(args.tensor_parallel_size))
+        start_device = dp_rank * tp
+        if visible:
+            if len(visible) < dp_size * tp:
+                raise RuntimeError(
+                    "independent DP needs at least DP*TP visible GPUs; "
+                    f"got {len(visible)} visible={visible}, dp={dp_size}, tp={tp}"
+                )
+            selected = visible[start_device : start_device + tp]
+        else:
+            selected = [str(start_device + offset) for offset in range(tp)]
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(selected)
 
     start, end = rank_bounds(len(prompts), dp_rank, dp_size)
     local_prompts = prompts[start:end] or ["Placeholder"]
@@ -447,6 +464,7 @@ def run_dp_rank(
                 "num_prompts": len(local_prompts),
                 "max_num_batched_tokens": local_batched_tokens,
                 "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "dp_mode": args.dp_mode,
             },
             sort_keys=True,
         ),
@@ -479,7 +497,7 @@ def run_data_parallel_benchmark(
     dp_size = args.data_parallel_size
     metrics_dir = Path(args.dp_output_dir or f"/tmp/olmo3sink_vllm_dp_metrics_{int(time.time())}")
     metrics_dir.mkdir(parents=True, exist_ok=True)
-    dp_master_port = args.dp_master_port or get_open_port()
+    dp_master_port = args.dp_master_port or (get_open_port() if args.dp_mode == "vllm-offline" else 0)
     dp_master_ip = args.dp_master_ip
     args_dict = vars(args).copy()
 
@@ -529,6 +547,7 @@ def run_data_parallel_benchmark(
             output_total += int(round_item.get("output_tokens_total", 0))
     aggregate = {
         "data_parallel_size": dp_size,
+        "dp_mode": args.dp_mode,
         "wall_seconds": wall_seconds,
         "prompt_tokens_total": prompt_total,
         "output_tokens_total": output_total,
@@ -576,6 +595,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-batched-tokens", type=int, default=None)
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--data-parallel-size", type=int, default=8)
+    parser.add_argument(
+        "--dp-mode",
+        choices=("independent", "vllm-offline"),
+        default="independent",
+        help=(
+            "independent starts one regular vLLM engine per DP rank and pins it to a GPU slice. "
+            "vllm-offline uses vLLM's offline DP environment variables, which rejects dense models in recent vLLM."
+        ),
+    )
     parser.add_argument("--dp-master-ip", default="127.0.0.1")
     parser.add_argument("--dp-master-port", type=int, default=0)
     parser.add_argument("--dp-timeout-seconds", type=int, default=7200)
@@ -649,6 +677,7 @@ def main() -> int:
             "max_num_batched_tokens": max_num_batched_tokens,
             "tensor_parallel_size": args.tensor_parallel_size,
             "data_parallel_size": args.data_parallel_size,
+            "dp_mode": args.dp_mode,
             "kv_cache_dtype": args.kv_cache_dtype,
             "quantization": args.quantization,
             "force_max_tokens": args.force_max_tokens,

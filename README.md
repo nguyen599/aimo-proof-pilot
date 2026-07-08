@@ -31,7 +31,7 @@ The command filename is historical; the current default in that script is a 20,4
 
 ## vLLM OLMo3Sink Speed Benchmark
 
-Use this when asking a host to estimate rollout generation speed on their hardware. It runs vLLM offline inference, pins vLLM to the known-good 0.23.1rc1 wheel by default, registers the local OLMo3Sink adapter, creates sixteen roughly 1k-token prompts, and requests 128k total output tokens by default. The default topology is `TP=1, DP=8`, so each DP rank handles two requests.
+Use this when asking a host to estimate rollout generation speed on their hardware. It runs vLLM offline inference, pins vLLM to the known-good 0.23.1rc1 wheel by default, registers the local OLMo3Sink adapter, creates sixteen roughly 1k-token prompts, and requests 128k total output tokens by default. The default topology is `TP=1, DP=8`, implemented as eight independent one-GPU vLLM engines, so each engine handles two requests.
 
 ```bash
 python scripts/bench_vllm_olmo3sink_speed.py \
