@@ -79,10 +79,10 @@ TEACHER_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"enable_exp
 RENDEZVOUS_DIR="${PRIME_3NODE_RENDEZVOUS_DIR:-/tmp/prime_rl_opd_3node/${RUN_NAME}}"
 mkdir -p "${RENDEZVOUS_DIR}"
 
-# Keep transient install/build/cache files in RAM-backed /dev/shm by default on
-# the shared operator cluster. The host maps /tmp to the shared /groups
-# filesystem, which is inode/quota constrained and can fail pip installs.
-TMP_ROOT="${PRIME_3NODE_TMP_ROOT:-/dev/shm/pp3/${RUN_NAME}/${NODE_LABEL}_${PRIME_COMPONENT_ROLE}}"
+# Keep transient install/build/cache files in /tmp by default. The shared
+# cluster's /dev/shm is fast but can make Git checkouts fail with index.lock
+# write errors under pip's VCS install path.
+TMP_ROOT="${PRIME_3NODE_TMP_ROOT:-/tmp/pp3/${RUN_NAME}/${NODE_LABEL}_${PRIME_COMPONENT_ROLE}}"
 mkdir -p "${TMP_ROOT}"/{tmp,xdg,pip,triton,torchinductor,ray,vllm,rpc,flashinfer,deep_gemm}
 export TMPDIR="${TMP_ROOT}/tmp"
 export TMP="${TMPDIR}"
