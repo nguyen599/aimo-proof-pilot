@@ -163,12 +163,14 @@ case "${TEACHER_HIDDEN_BACKEND}" in
   extractor|vllm_extractor|official_extractor)
     export PRIME_RL_HIDDEN_STATE_BACKEND="vllm_extractor"
     TEACHER_HIDDEN_STORAGE="${PRIME_OPD_TEACHER_HIDDEN_STORAGE:-${TMP_ROOT}/hidden_states}"
+    TEACHER_EXTRACTOR_LAYER_ID="${PRIME_OPD_TEACHER_EXTRACTOR_LAYER_ID:-42}"
     mkdir -p "${TEACHER_HIDDEN_STORAGE}"
     TEACHER_VLLM_EXTRA_DEFAULT="$(
-      TEACHER_HIDDEN_STORAGE="${TEACHER_HIDDEN_STORAGE}" python - <<'PY'
+      TEACHER_HIDDEN_STORAGE="${TEACHER_HIDDEN_STORAGE}" TEACHER_EXTRACTOR_LAYER_ID="${TEACHER_EXTRACTOR_LAYER_ID}" python - <<'PY'
 import json
 import os
 
+layer_id = int(os.environ["TEACHER_EXTRACTOR_LAYER_ID"])
 print(json.dumps({
     "kv_cache_dtype": "fp8",
     "block_size": 256,
@@ -182,7 +184,7 @@ print(json.dumps({
         "num_speculative_tokens": 1,
         "draft_model_config": {
             "hf_config": {
-                "eagle_aux_hidden_state_layer_ids": [43],
+                "eagle_aux_hidden_state_layer_ids": [layer_id],
             },
         },
     },
@@ -196,6 +198,7 @@ print(json.dumps({
 }))
 PY
     )"
+    echo "[prime-opd-3node] using vLLM extractor hidden-state layer id ${TEACHER_EXTRACTOR_LAYER_ID}"
     ;;
   hook|"")
     export PRIME_RL_HIDDEN_STATE_BACKEND="hook"
