@@ -399,7 +399,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_vllm_max_model_len "${VLLM_CTX_LEN}" \
       --prime_vllm_dtype bfloat16 \
       --prime_vllm_enforce_eager "${PRIME_VLLM_ENFORCE_EAGER:-false}" \
-      --prime_vllm_quantization "${PRIME_VLLM_QUANTIZATION:-fp8}" \
+      --prime_vllm_quantization "${PRIME_VLLM_QUANTIZATION:-none}" \
       --prime_vllm_gpu_memory_utilization "${PRIME_VLLM_GPU_MEMORY_UTILIZATION:-0.95}" \
       --prime_vllm_use_deep_gemm "${PRIME_VLLM_USE_DEEP_GEMM:-false}" \
       --prime_vllm_max_num_seqs "${PRIME_OPD_POLICY_MAX_NUM_SEQS:-16}" \
