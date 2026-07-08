@@ -24,12 +24,16 @@ LOCK_RUN_NAME="$(printf '%s' "${RUN_NAME}" | tr -c 'A-Za-z0-9_.-' '_')"
 # If an earlier command was stopped while waiting for remote endpoints, its
 # bash wrapper can keep holding the old role lock even though no Prime-RL
 # process is active. Clean only old role command shells for this same node.
-if [[ "${PRIME_3NODE_KILL_STALE_ROLE_SHELLS:-1}" == "1" ]]; then
+# Disabled by default: this runs inside an operator-managed command.sh parent,
+# and broad command-shell cleanup can kill the current launch before training
+# starts. Leave it opt-in for manual recovery of truly stale wrappers.
+if [[ "${PRIME_3NODE_KILL_STALE_ROLE_SHELLS:-0}" == "1" ]]; then
   CURRENT_COMMAND_SCRIPT="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+  CURRENT_PARENT_PID="${PPID:-}"
   mapfile -t STALE_ROLE_SHELL_PIDS < <(
     ps -eo pid=,args= \
-      | awk -v self="$$" -v node="${NODE_LABEL}" -v current_script="${CURRENT_COMMAND_SCRIPT}" '
-          $1 != self && index($0, current_script) == 0 && $0 ~ "/olmo_operator/node" node "/commands/.*/command.sh" { print $1 }
+      | awk -v self="$$" -v parent="${CURRENT_PARENT_PID}" -v node="${NODE_LABEL}" -v current_script="${CURRENT_COMMAND_SCRIPT}" '
+          $1 != self && $1 != parent && index($0, current_script) == 0 && $0 ~ "/olmo_operator/node" node "/commands/.*/command.sh" { print $1 }
         '
   )
   if (( ${#STALE_ROLE_SHELL_PIDS[@]} > 0 )); then
