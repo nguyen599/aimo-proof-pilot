@@ -170,6 +170,21 @@ BATCH_SIZE="${PRIME_BATCH_SIZE:-8}"
 GROUP_SIZE="${PRIME_GROUP_SIZE:-8}"
 MAX_INFLIGHT="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-48}"
 MAX_OFF_POLICY="${PRIME_MAX_OFF_POLICY_STEPS:-32}"
+POLICY_TP="${PRIME_VLLM_TP:-2}"
+POLICY_DP="${PRIME_VLLM_DP:-4}"
+POLICY_GPU_COUNT=$((POLICY_TP * POLICY_DP))
+if (( POLICY_GPU_COUNT < 1 || POLICY_GPU_COUNT > 8 )); then
+  echo "[prime-opd-3node] invalid policy topology: PRIME_VLLM_TP=${POLICY_TP} PRIME_VLLM_DP=${POLICY_DP} requires ${POLICY_GPU_COUNT} GPUs on one 8-GPU policy node" >&2
+  exit 1
+fi
+POLICY_GPU_IDS_DEFAULT=""
+for ((gpu_idx = 0; gpu_idx < POLICY_GPU_COUNT; gpu_idx++)); do
+  if [[ -n "${POLICY_GPU_IDS_DEFAULT}" ]]; then
+    POLICY_GPU_IDS_DEFAULT+=","
+  fi
+  POLICY_GPU_IDS_DEFAULT+="${gpu_idx}"
+done
+POLICY_GPU_IDS="${PRIME_POLICY_GPU_IDS:-${POLICY_GPU_IDS_DEFAULT}}"
 
 # The host/operator process exports GLOBAL_RANK/NODE_RANK for node selection.
 # Each Prime-RL component below is intentionally a single-node process, so do
@@ -278,19 +293,19 @@ case "${PRIME_COMPONENT_ROLE}" in
   policy_inference)
     export OLMO_RUN_DIR_NAME="${RUN_NAME}_policy_node${NODE_LABEL}"
     # vLLM 0.23/0.24 can choose FlashInfer MNNVL fused allreduce+RMSNorm during
-    # cudagraph profiling for this TP=8 OLMo3Sink policy. The default MNNVL
-    # workspace is too small for the 98k serving context, so prefer TRTLLM's
-    # allreduce fusion backend and give FlashInfer a large workspace.
+    # cudagraph profiling for this OLMo3Sink policy. Run TP=2,DP=4 by default:
+    # four 2-GPU policy instances on node4 reduce small-model communication cost
+    # while still using all 8 GPUs.
     export VLLM_FLASHINFER_ALLREDUCE_BACKEND="${PRIME_VLLM_FLASHINFER_ALLREDUCE_BACKEND:-trtllm}"
     export VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE="${PRIME_VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE:-2147483648}"
     exec "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
       --prime_component policy_inference \
       --prime_policy_port "${POLICY_PORT}" \
-      --prime_policy_gpu_ids "0,1,2,3,4,5,6,7" \
+      --prime_policy_gpu_ids "${POLICY_GPU_IDS}" \
       --prime_train_gpus 0 \
-      --prime_infer_gpus 8 \
-      --prime_vllm_tensor_parallel_size "${PRIME_VLLM_TP:-8}" \
-      --prime_vllm_data_parallel_size "${PRIME_VLLM_DP:-1}" \
+      --prime_infer_gpus "${POLICY_GPU_COUNT}" \
+      --prime_vllm_tensor_parallel_size "${POLICY_TP}" \
+      --prime_vllm_data_parallel_size "${POLICY_DP}" \
       --prime_vllm_max_model_len "${VLLM_CTX_LEN}" \
       --prime_vllm_dtype bfloat16 \
       --prime_vllm_enforce_eager "${PRIME_VLLM_ENFORCE_EAGER:-false}" \
@@ -344,9 +359,9 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_infer_gpus 0 \
       --prime_policy_base_url "${POLICY_BASE_URL}" \
       --prime_policy_admin_base_url "${POLICY_BASE_URL}" \
-      --prime_policy_dp_rank_count "${PRIME_POLICY_DP_RANK_COUNT:-1}" \
-      --prime_vllm_tensor_parallel_size "${PRIME_VLLM_TP:-8}" \
-      --prime_vllm_data_parallel_size "${PRIME_VLLM_DP:-1}" \
+      --prime_policy_dp_rank_count "${PRIME_POLICY_DP_RANK_COUNT:-${POLICY_DP}}" \
+      --prime_vllm_tensor_parallel_size "${POLICY_TP}" \
+      --prime_vllm_data_parallel_size "${POLICY_DP}" \
       --prime_opd_teacher_model "${TEACHER_MODEL_PATH}" \
       --prime_opd_start_teacher false \
       --prime_opd_teacher_base_url "${TEACHER_BASE_URL}" \
