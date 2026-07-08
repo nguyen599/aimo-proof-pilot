@@ -372,7 +372,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-4}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
-      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\",\"disable_custom_all_reduce\":true,\"compilation_config\":{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"cudagraph_capture_sizes\":[1,2,4,8,16],\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
+      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\",\"attention_config\":{\"backend\":\"FLASHINFER_MLA_SPARSE_DSV4\"},\"disable_custom_all_reduce\":true,\"compilation_config\":{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"cudagraph_capture_sizes\":[1,2,4,8,16],\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
     ;;
 
   trainer_orchestrator)
