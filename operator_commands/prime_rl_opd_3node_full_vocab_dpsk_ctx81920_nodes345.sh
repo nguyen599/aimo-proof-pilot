@@ -74,7 +74,7 @@ export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 POLICY_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"disable_custom_all_reduce":true}'
-TEACHER_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"enable_expert_parallel":true,"linear_backend":"deep_gemm","attention_config":{"backend":"FLASHINFER_MLA_SPARSE_DSV4"},"disable_custom_all_reduce":true}'
+TEACHER_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"enable_expert_parallel":true,"linear_backend":"deep_gemm"}'
 
 RENDEZVOUS_DIR="${PRIME_3NODE_RENDEZVOUS_DIR:-/tmp/prime_rl_opd_3node/${RUN_NAME}}"
 mkdir -p "${RENDEZVOUS_DIR}"
@@ -99,6 +99,52 @@ export FLASHINFER_WORKSPACE_BASE="${TMP_ROOT}/flashinfer"
 export FLASHINFER_CUBIN_DIR="${TMP_ROOT}/flashinfer/.cache/flashinfer/cubins"
 export DG_JIT_CACHE_DIR="${TMP_ROOT}/deep_gemm"
 mkdir -p "${VLLM_RPC_BASE_PATH}"
+
+TEACHER_HIDDEN_BACKEND="${PRIME_OPD_TEACHER_HIDDEN_BACKEND:-hook}"
+case "${TEACHER_HIDDEN_BACKEND}" in
+  extractor|vllm_extractor|official_extractor)
+    export PRIME_RL_HIDDEN_STATE_BACKEND="vllm_extractor"
+    TEACHER_HIDDEN_STORAGE="${PRIME_OPD_TEACHER_HIDDEN_STORAGE:-${TMP_ROOT}/hidden_states}"
+    mkdir -p "${TEACHER_HIDDEN_STORAGE}"
+    TEACHER_VLLM_EXTRA_DEFAULT="$(
+      TEACHER_HIDDEN_STORAGE="${TEACHER_HIDDEN_STORAGE}" python - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "kv_cache_dtype": "fp8",
+    "block_size": 256,
+    "enable_expert_parallel": True,
+    "linear_backend": "deep_gemm",
+    "enable_chunked_prefill": False,
+    "speculative_config": {
+        "method": "extract_hidden_states",
+        "num_speculative_tokens": 1,
+        "draft_model_config": {
+            "hf_config": {
+                "eagle_aux_hidden_state_layer_ids": [43],
+            },
+        },
+    },
+    "kv_transfer_config": {
+        "kv_connector": "ExampleHiddenStatesConnector",
+        "kv_role": "kv_producer",
+        "kv_connector_extra_config": {
+            "shared_storage_path": os.environ["TEACHER_HIDDEN_STORAGE"],
+        },
+    },
+}))
+PY
+    )"
+    ;;
+  hook|"")
+    export PRIME_RL_HIDDEN_STATE_BACKEND="hook"
+    ;;
+  *)
+    echo "[prime-opd-3node] invalid PRIME_OPD_TEACHER_HIDDEN_BACKEND=${TEACHER_HIDDEN_BACKEND}; expected hook or extractor" >&2
+    exit 1
+    ;;
+esac
 
 HOST_NAME="$(hostname 2>/dev/null || echo unknown-host)"
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
