@@ -169,6 +169,7 @@ def apply_vllm_env(args: argparse.Namespace) -> None:
     else:
         os.environ.pop("VLLM_DISABLED_KERNELS", None)
     os.environ["VLLM_BENCH_DISABLE_TILELANG"] = "1" if args.disable_tilelang else "0"
+    os.environ["VLLM_USE_DEEP_GEMM"] = "1" if args.use_deep_gemm else "0"
 
 
 def register_olmo3sink(src_dir: Path, skip: bool) -> None:
@@ -683,6 +684,12 @@ def parse_args() -> argparse.Namespace:
         help="Patch the isolated vLLM target so optional TileLang kernels are unavailable.",
     )
     parser.add_argument(
+        "--use-deep-gemm",
+        type=str_to_bool,
+        default=False,
+        help="Enable vLLM DeepGEMM kernels. Disabled by default for OLMo3Sink benchmark stability.",
+    )
+    parser.add_argument(
         "--vllm-disabled-kernels",
         default=os.environ.get("VLLM_DISABLED_KERNELS", DEFAULT_VLLM_DISABLED_KERNELS),
         help=(
@@ -744,6 +751,7 @@ def main() -> int:
             "ignore_eos": args.ignore_eos,
             "vllm_wheel_url": args.vllm_wheel_url if args.install_vllm_wheel else None,
             "vllm_disabled_kernels": os.environ.get("VLLM_DISABLED_KERNELS"),
+            "vllm_use_deep_gemm": os.environ.get("VLLM_USE_DEEP_GEMM"),
         },
         sort_keys=True,
     ))

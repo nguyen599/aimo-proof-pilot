@@ -63,7 +63,7 @@ python scripts/bench_vllm_olmo3sink_speed.py \
 ```
 
 The script prints engine load time, actual prompt/output token counts, finish reasons, total decode tokens per second, per-request decode tokens per second, per-DP-rank metrics, aggregate DP throughput, and `nvidia-smi` snapshots.
-It also patches the isolated pinned vLLM target so optional TileLang kernels are disabled by default; pass `--disable-tilelang false` if the host has a working TileLang install and you want to test that path.
+It also patches the isolated pinned vLLM target so optional TileLang kernels are disabled by default and sets `VLLM_USE_DEEP_GEMM=0`; pass `--disable-tilelang false --use-deep-gemm true` if the host has those kernels working and you want to test that path.
 
 ## Current Best OPD Pipeline: 4xH200, 20k Context
 
