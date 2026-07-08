@@ -73,6 +73,9 @@ export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENC
 export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
+POLICY_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"disable_custom_all_reduce":true,"compilation_config":{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8,16],"pass_config":{"fuse_allreduce_rms":false}}}'
+TEACHER_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"enable_expert_parallel":true,"linear_backend":"deep_gemm","attention_config":{"backend":"FLASHINFER_MLA_SPARSE_DSV4"},"disable_custom_all_reduce":true,"compilation_config":{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8,16],"pass_config":{"fuse_allreduce_rms":false}}}'
+
 RENDEZVOUS_DIR="${PRIME_3NODE_RENDEZVOUS_DIR:-/tmp/prime_rl_opd_3node/${RUN_NAME}}"
 mkdir -p "${RENDEZVOUS_DIR}"
 
@@ -342,7 +345,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_vllm_max_num_seqs "${PRIME_OPD_POLICY_MAX_NUM_SEQS:-16}" \
       --prime_vllm_max_num_batched_tokens "${BATCHED_TOKENS}" \
       --prime_vllm_reasoning_parser deepseek_v4 \
-      --prime_vllm_extra "${PRIME_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"disable_custom_all_reduce\":true,\"compilation_config\":{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"cudagraph_capture_sizes\":[1,2,4,8,16],\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
+      --prime_vllm_extra "${PRIME_VLLM_EXTRA:-${POLICY_VLLM_EXTRA_DEFAULT}}"
     ;;
 
   teacher_inference)
@@ -372,7 +375,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-4}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
-      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\",\"attention_config\":{\"backend\":\"FLASHINFER_MLA_SPARSE_DSV4\"},\"disable_custom_all_reduce\":true,\"compilation_config\":{\"cudagraph_mode\":\"FULL_DECODE_ONLY\",\"cudagraph_capture_sizes\":[1,2,4,8,16],\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
+      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-${TEACHER_VLLM_EXTRA_DEFAULT}}"
     ;;
 
   trainer_orchestrator)
