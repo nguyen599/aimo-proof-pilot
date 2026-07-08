@@ -315,7 +315,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_vllm_max_num_seqs "${PRIME_OPD_POLICY_MAX_NUM_SEQS:-16}" \
       --prime_vllm_max_num_batched_tokens "${BATCHED_TOKENS}" \
       --prime_vllm_reasoning_parser deepseek_v4 \
-      --prime_vllm_extra "${PRIME_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"disable_custom_all_reduce\":true}}"
+      --prime_vllm_extra "${PRIME_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"disable_custom_all_reduce\":true,\"compilation_config\":{\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
     ;;
 
   teacher_inference)
@@ -345,7 +345,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-4}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
-      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\",\"disable_custom_all_reduce\":true}}"
+      --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"enable_expert_parallel\":true,\"linear_backend\":\"deep_gemm\",\"disable_custom_all_reduce\":true,\"compilation_config\":{\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
     ;;
 
   trainer_orchestrator)
