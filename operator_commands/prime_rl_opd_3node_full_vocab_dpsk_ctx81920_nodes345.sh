@@ -78,9 +78,11 @@ export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-olmo3-prime-rl-full-vocab-3node}"
 export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENCY:-1}"
-# Keep the container's upgraded vLLM by default. Setting this to 1 is still
-# supported for explicit wheel override tests.
-export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}"
+# Pin Prime-RL runtime vLLM to the wrapper's known-good wheel by default.
+# The baked vLLM 0.24 image currently fails policy FP8 startup with an internal
+# CUTLASS W8A8 GEMM error for OLMo3Sink; the pinned wheel matches the last
+# successful policy node config/log.
+export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 POLICY_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"disable_custom_all_reduce":true,"compilation_config":{"pass_config":{"fuse_allreduce_rms":false}}}'
