@@ -3,7 +3,7 @@ polars
 numpy
 pyarrow
 datasets
-transformers==5.9.0
+transformers==5.13.0
 accelerate==1.13.0
 safetensors
 rich
