@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 
-from prime_rl.trainer.models.fp8 import quantize_to_fp8_blockwise
+from .fp8 import quantize_to_fp8_blockwise
 
 
 def convert_layer_to_vllm_kernel(
