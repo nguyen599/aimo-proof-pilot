@@ -45,6 +45,7 @@ python scripts/bench_vllm_olmo3sink_speed.py \
   --kv-cache-dtype fp8 \
   --block-size 256 \
   --quantization fp8 \
+  --vllm-disabled-kernels FlashInferFP8ScaledMMLinearKernel \
   --out-json /tmp/olmo3sink_vllm_bench.json
 ```
 

@@ -36,6 +36,7 @@ DEFAULT_VLLM_RUNTIME_WHEEL_URL = (
 )
 DEFAULT_VLLM_VERSION_FRAGMENT = "0.23.1rc1.dev699+gf5a8d7337"
 DEFAULT_VLLM_INSTALL_DIR = "/tmp/olmo3sink_vllm_0_23_1rc1_dev699"
+DEFAULT_VLLM_DISABLED_KERNELS = "FlashInferFP8ScaledMMLinearKernel"
 
 
 def str_to_bool(value: str | bool) -> bool:
@@ -125,6 +126,15 @@ def add_pythonpath(path: Path) -> None:
             os.environ["PYTHONPATH"] = path_text + os.pathsep + existing
     else:
         os.environ["PYTHONPATH"] = path_text
+
+
+def apply_vllm_env(args: argparse.Namespace) -> None:
+    if args.vllm_disabled_kernels is None:
+        return
+    if args.vllm_disabled_kernels:
+        os.environ["VLLM_DISABLED_KERNELS"] = args.vllm_disabled_kernels
+    else:
+        os.environ.pop("VLLM_DISABLED_KERNELS", None)
 
 
 def register_olmo3sink(src_dir: Path, skip: bool) -> None:
@@ -422,6 +432,7 @@ def run_dp_rank(
     metrics_dir: str,
 ) -> None:
     args = argparse.Namespace(**args_dict)
+    apply_vllm_env(args)
     if args.dp_mode == "vllm-offline":
         os.environ["VLLM_DP_RANK"] = str(dp_rank)
         os.environ["VLLM_DP_RANK_LOCAL"] = str(dp_rank)
@@ -631,6 +642,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm-wheel-url", default=DEFAULT_VLLM_RUNTIME_WHEEL_URL)
     parser.add_argument("--vllm-version-fragment", default=DEFAULT_VLLM_VERSION_FRAGMENT)
     parser.add_argument("--vllm-install-dir", default=DEFAULT_VLLM_INSTALL_DIR)
+    parser.add_argument(
+        "--vllm-disabled-kernels",
+        default=os.environ.get("VLLM_DISABLED_KERNELS", DEFAULT_VLLM_DISABLED_KERNELS),
+        help=(
+            "Comma-separated VLLM_DISABLED_KERNELS value. The default disables the FlashInfer FP8 "
+            "linear kernel because this cluster's TileLang libcudart stub lacks cudaDeviceReset."
+        ),
+    )
     parser.add_argument("--out-json", default=None, help="Optional path for benchmark metrics JSON.")
     parser.add_argument("--print-preview-chars", type=int, default=500)
     return parser.parse_args()
@@ -647,6 +666,7 @@ def main() -> int:
     if args.batch_size < args.data_parallel_size:
         raise ValueError("--batch-size should be >= --data-parallel-size so every DP rank gets work")
 
+    apply_vllm_env(args)
     ensure_vllm_pin(args)
 
     from transformers import AutoTokenizer
@@ -683,6 +703,7 @@ def main() -> int:
             "force_max_tokens": args.force_max_tokens,
             "ignore_eos": args.ignore_eos,
             "vllm_wheel_url": args.vllm_wheel_url if args.install_vllm_wheel else None,
+            "vllm_disabled_kernels": os.environ.get("VLLM_DISABLED_KERNELS"),
         },
         sort_keys=True,
     ))
