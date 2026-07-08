@@ -64,6 +64,11 @@ export NCCL_IB_PCI_RELAXED_ORDERING="${NCCL_IB_PCI_RELAXED_ORDERING:-1}"
 export NCCL_CROSS_NIC="${NCCL_CROSS_NIC:-1}"
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 export VLLM_ALLOW_INSECURE_SERIALIZATION="${VLLM_ALLOW_INSECURE_SERIALIZATION:-1}"
+# DeepSeek-V4-Flash + MARLIN MoE has hit allocator asserts during vLLM's
+# breakable CUDA graph profiling in Prime-RL worker mode. Explicitly opting out
+# keeps the normal non-eager vLLM compile/cudagraph path, matching the standalone
+# vllm serve baseline for this checkpoint.
+export VLLM_USE_BREAKABLE_CUDAGRAPH="${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}"
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-olmo3-prime-rl-full-vocab-3node}"
