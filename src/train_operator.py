@@ -727,6 +727,10 @@ def operator_node_label(args: argparse.Namespace) -> str:
     node_rank = getattr(args, "node_rank", None)
     if node_rank is not None:
         return str(node_rank)
+    for name in ("OLMO_OPERATOR_NODE_LABEL", "OPERATOR_NODE_LABEL"):
+        value = os.environ.get(name)
+        if value not in {None, ""}:
+            return str(value)
     for name in ("GLOBAL_RANK", "NODE_RANK", "SLURM_NODEID", "RANK"):
         value = os.environ.get(name)
         if value not in {None, ""}:
