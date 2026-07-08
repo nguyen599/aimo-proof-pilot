@@ -150,6 +150,8 @@ export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENC
 # CUTLASS W8A8 GEMM error for OLMo3Sink; the pinned wheel matches the last
 # successful policy node config/log.
 export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-1}"
+export PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION="${PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION:-0.23.1rc1.dev699+gf5a8d7337}"
+export PRIME_RL_RUNTIME_VLLM_WHEEL_URL="${PRIME_RL_RUNTIME_VLLM_WHEEL_URL:-https://wheels.vllm.ai/f5a8d73377d0f0a4e00cba172f9fbd0d50471b07/vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 TEACHER_VLLM_EXTRA_DEFAULT='{"kv_cache_dtype":"fp8","block_size":256,"enable_expert_parallel":true,"linear_backend":"deep_gemm","disable_custom_all_reduce":true,"compilation_config":{"pass_config":{"fuse_allreduce_rms":false,"fi_allreduce_fusion_max_size_mb":0}},"additional_config":{}}'
@@ -367,9 +369,12 @@ if (( POLICY_GPU_COUNT < 1 || POLICY_GPU_COUNT > 8 )); then
   exit 1
 fi
 POLICY_API_SERVER_COUNT="${PRIME_VLLM_API_SERVER_COUNT:-${POLICY_DP}}"
+POLICY_REQS_PER_DP="${PRIME_OPD_POLICY_REQS_PER_DP:-2}"
+POLICY_MAX_NUM_SEQS_DEFAULT=$((POLICY_DP * POLICY_REQS_PER_DP))
+POLICY_MAX_NUM_SEQS="${PRIME_OPD_POLICY_MAX_NUM_SEQS:-${POLICY_MAX_NUM_SEQS_DEFAULT}}"
 POLICY_DP_RPC_PORT="${PRIME_VLLM_DATA_PARALLEL_RPC_PORT:-$((37000 + NODE_LABEL))}"
 TEACHER_DP_RPC_PORT="${PRIME_OPD_TEACHER_VLLM_DATA_PARALLEL_RPC_PORT:-38005}"
-echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} dp_rpc_port=${POLICY_DP_RPC_PORT}"
+echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} max_num_seqs=${POLICY_MAX_NUM_SEQS} (${POLICY_REQS_PER_DP}/dp_rank) dp_rpc_port=${POLICY_DP_RPC_PORT}"
 echo "[prime-opd-3node] teacher_dp_rpc_port=${TEACHER_DP_RPC_PORT}"
 POLICY_VLLM_EXTRA_DEFAULT="$(
   POLICY_TP="${POLICY_TP}" python - <<'PY'
@@ -526,7 +531,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_vllm_api_server_count "${POLICY_API_SERVER_COUNT}" \
       --prime_vllm_data_parallel_rpc_port "${POLICY_DP_RPC_PORT}" \
       --prime_vllm_use_deep_gemm "${PRIME_VLLM_USE_DEEP_GEMM:-false}" \
-      --prime_vllm_max_num_seqs "${PRIME_OPD_POLICY_MAX_NUM_SEQS:-16}" \
+      --prime_vllm_max_num_seqs "${POLICY_MAX_NUM_SEQS}" \
       --prime_vllm_max_num_batched_tokens "${BATCHED_TOKENS}" \
       --prime_vllm_reasoning_parser deepseek_v4 \
       --prime_vllm_extra "${PRIME_VLLM_EXTRA:-${POLICY_VLLM_EXTRA_DEFAULT}}"

@@ -1656,6 +1656,32 @@ def runtime_dependency_probe(
     return process.returncode == 0, redact_secret(details)
 
 
+def verify_runtime_vllm_pin(site_dir: Path, megatron_dir: Path, expected_fragment: str) -> None:
+    if not expected_fragment:
+        return
+    source = (
+        "import importlib.metadata as md; "
+        "version = md.version('vllm'); "
+        f"expected = {expected_fragment!r}; "
+        "print('vllm', version); "
+        "raise SystemExit(0 if expected in version else 1)"
+    )
+    process = subprocess.run(
+        [sys.executable, "-c", source],
+        env=runtime_dependency_env(site_dir, megatron_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    details = "\n".join(part.strip() for part in (process.stdout, process.stderr) if part.strip())
+    if process.returncode != 0:
+        raise RuntimeError(
+            "Prime-RL runtime vLLM pin verification failed. "
+            f"Expected version fragment {expected_fragment!r}; got:\n{redact_secret(details)}"
+        )
+    log(f"Prime-RL runtime vLLM pin verified:\n{redact_secret(details)}")
+
+
 def forwarded_backend(forwarded_args: list[str]) -> str | None:
     return forwarded_option_value(forwarded_args, "--backend")
 
@@ -1809,6 +1835,16 @@ def prime_rl_runtime_requirements() -> list[str]:
 
 def prime_rl_runtime_requirements_string() -> str:
     return "\n".join(prime_rl_runtime_requirements())
+
+
+def prime_rl_runtime_vllm_expected_fragment() -> str:
+    if not parse_bool(os.environ.get("PRIME_RL_RUNTIME_INSTALL_VLLM"), True):
+        return ""
+    value = os.environ.get("PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION", DEFAULT_GRPO_RUNTIME_VLLM_VERSION)
+    value = value.strip()
+    if value.lower() in {"", "0", "false", "none", "off", "skip", "disabled"}:
+        return ""
+    return value
 
 
 def prime_rl_source_requirements() -> list[str]:
@@ -2435,9 +2471,65 @@ if _aimo_vllm_os.getenv("VLLM_SKIP_DEEPSEEK_V4_SPARSE_MLA_WARMUP", "0") == "1":
         log(f"WARNING: Could not install vLLM runtime sitecustomize patch in {site_dir}: {exc}")
 
 
+def patch_runtime_vllm_flashinfer_comm_import(site_dir: Path | None) -> None:
+    if site_dir is None:
+        return
+    fusion_path = (
+        site_dir
+        / "vllm"
+        / "compilation"
+        / "passes"
+        / "fusion"
+        / "allreduce_rms_fusion.py"
+    )
+    if not fusion_path.is_file():
+        return
+    marker = "AIMO_FLASHINFER_COMM_IMPORT_PATCH"
+    try:
+        text = fusion_path.read_text(encoding="utf-8")
+        if marker in text:
+            log(f"vLLM flashinfer.comm import patch already present: {fusion_path}")
+            return
+        old = (
+            "if find_spec(\"flashinfer\"):\n"
+            "    try:\n"
+            "        import flashinfer.comm as _flashinfer_comm\n"
+            "\n"
+            "        if hasattr(_flashinfer_comm, \"allreduce_fusion\") and hasattr(\n"
+            "            _flashinfer_comm, \"create_allreduce_fusion_workspace\"\n"
+            "        ):\n"
+            "            flashinfer_comm = _flashinfer_comm\n"
+            "    except ImportError:\n"
+            "        pass\n"
+        )
+        new = (
+            "if find_spec(\"flashinfer\"):\n"
+            "    try:\n"
+            "        import flashinfer.comm as _flashinfer_comm\n"
+            "\n"
+            "        if hasattr(_flashinfer_comm, \"allreduce_fusion\") and hasattr(\n"
+            "            _flashinfer_comm, \"create_allreduce_fusion_workspace\"\n"
+            "        ):\n"
+            "            flashinfer_comm = _flashinfer_comm\n"
+            "    except Exception:\n"
+            f"        # {marker}: flashinfer.comm can import a tilelang libcudart\n"
+            "        # stub missing cudaDeviceReset on this image. Treat that optional\n"
+            "        # allreduce/RMS fusion path as unavailable.\n"
+            "        pass\n"
+        )
+        if old not in text:
+            log(f"WARNING: Could not patch vLLM flashinfer.comm import pattern in {fusion_path}")
+            return
+        fusion_path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        log(f"Patched vLLM flashinfer.comm import guard: {fusion_path}")
+    except Exception as exc:
+        log(f"WARNING: Could not patch vLLM flashinfer.comm import guard in {fusion_path}: {exc}")
+
+
 def patch_runtime_vllm_pr47258(site_dir: Path | None = None) -> None:
     """Apply vLLM PR47258 until the image wheel includes it."""
     install_vllm_runtime_sitecustomize_patch(site_dir)
+    patch_runtime_vllm_flashinfer_comm_import(site_dir)
     try:
         import vllm.model_executor.layers.fused_moe.oracle.fp8 as fp8_oracle
         import vllm.model_executor.warmup.deep_gemm_warmup as deep_gemm_warmup
@@ -2922,6 +3014,11 @@ def prepare_runtime_training_dependencies(
             "Prime-RL final NVIDIA CUDA runtime",
             no_deps=True,
             upgrade=True,
+        )
+        verify_runtime_vllm_pin(
+            site_dir,
+            megatron_dir,
+            prime_rl_runtime_vllm_expected_fragment(),
         )
         if (
             os.environ.get("PRIME_RL_VLLM_OVERRIDE", "0") == "1"

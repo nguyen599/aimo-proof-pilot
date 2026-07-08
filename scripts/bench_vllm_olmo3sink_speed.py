@@ -76,6 +76,7 @@ def ensure_vllm_pin(args: argparse.Namespace) -> None:
         add_pythonpath(target)
         patch_vllm_tilelang_probe(target)
         patch_vllm_flashinfer_probe(target)
+        patch_vllm_flashinfer_comm_import(target)
     try:
         current = importlib_metadata.version("vllm")
     except importlib_metadata.PackageNotFoundError:
@@ -85,6 +86,7 @@ def ensure_vllm_pin(args: argparse.Namespace) -> None:
     if current and expected in current and not args.force_reinstall_vllm:
         patch_vllm_tilelang_probe(target)
         patch_vllm_flashinfer_probe(target)
+        patch_vllm_flashinfer_comm_import(target)
         print(f"vllm_pin=current_ok version={current}")
         return
 
@@ -111,6 +113,7 @@ def ensure_vllm_pin(args: argparse.Namespace) -> None:
     add_pythonpath(target)
     patch_vllm_tilelang_probe(target)
     patch_vllm_flashinfer_probe(target)
+    patch_vllm_flashinfer_comm_import(target)
     try:
         installed = importlib_metadata.version("vllm")
     except importlib_metadata.PackageNotFoundError:
@@ -172,6 +175,47 @@ def patch_vllm_flashinfer_probe(target: Path) -> None:
         return
     flashinfer_utils.write_text(patched)
     print(f"vllm_flashinfer_patch=applied path={flashinfer_utils}", flush=True)
+
+
+def patch_vllm_flashinfer_comm_import(target: Path) -> None:
+    fusion_path = target / "vllm" / "compilation" / "passes" / "fusion" / "allreduce_rms_fusion.py"
+    if not fusion_path.exists():
+        return
+    text = fusion_path.read_text()
+    if "VLLM_BENCH_FLASHINFER_COMM_IMPORT_PATCH" in text:
+        return
+    old = (
+        "if find_spec(\"flashinfer\"):\n"
+        "    try:\n"
+        "        import flashinfer.comm as _flashinfer_comm\n"
+        "\n"
+        "        if hasattr(_flashinfer_comm, \"allreduce_fusion\") and hasattr(\n"
+        "            _flashinfer_comm, \"create_allreduce_fusion_workspace\"\n"
+        "        ):\n"
+        "            flashinfer_comm = _flashinfer_comm\n"
+        "    except ImportError:\n"
+        "        pass\n"
+    )
+    new = (
+        "if find_spec(\"flashinfer\"):\n"
+        "    try:\n"
+        "        import flashinfer.comm as _flashinfer_comm\n"
+        "\n"
+        "        if hasattr(_flashinfer_comm, \"allreduce_fusion\") and hasattr(\n"
+        "            _flashinfer_comm, \"create_allreduce_fusion_workspace\"\n"
+        "        ):\n"
+        "            flashinfer_comm = _flashinfer_comm\n"
+        "    except Exception:\n"
+        "        # VLLM_BENCH_FLASHINFER_COMM_IMPORT_PATCH: flashinfer.comm can\n"
+        "        # import a tilelang libcudart stub missing cudaDeviceReset on\n"
+        "        # this image. Treat that optional fusion path as unavailable.\n"
+        "        pass\n"
+    )
+    if old not in text:
+        print(f"vllm_flashinfer_comm_patch=skipped path={fusion_path}", flush=True)
+        return
+    fusion_path.write_text(text.replace(old, new, 1))
+    print(f"vllm_flashinfer_comm_patch=applied path={fusion_path}", flush=True)
 
 
 def add_src_to_path(src_dir: Path) -> None:
