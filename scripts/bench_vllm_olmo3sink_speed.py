@@ -35,6 +35,7 @@ DEFAULT_VLLM_RUNTIME_WHEEL_URL = (
     "vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl"
 )
 DEFAULT_VLLM_VERSION_FRAGMENT = "0.23.1rc1.dev699+gf5a8d7337"
+DEFAULT_VLLM_INSTALL_DIR = "/tmp/olmo3sink_vllm_0_23_1rc1_dev699"
 
 
 def str_to_bool(value: str | bool) -> bool:
@@ -68,6 +69,9 @@ def repo_root_from_script() -> Path:
 def ensure_vllm_pin(args: argparse.Namespace) -> None:
     if not args.install_vllm_wheel:
         return
+    target = Path(args.vllm_install_dir).expanduser().resolve()
+    if (target / "vllm").exists():
+        add_pythonpath(target)
     try:
         current = importlib_metadata.version("vllm")
     except importlib_metadata.PackageNotFoundError:
@@ -92,12 +96,13 @@ def ensure_vllm_pin(args: argparse.Namespace) -> None:
         "--no-input",
         "--no-cache-dir",
         "--no-deps",
-        "--force-reinstall",
-        "--break-system-packages",
+        "--upgrade",
+        "--target",
+        str(target),
         args.vllm_wheel_url,
     ]
     subprocess.check_call(command)
-    importlib_metadata.Distribution.discover.cache_clear() if hasattr(importlib_metadata.Distribution.discover, "cache_clear") else None
+    add_pythonpath(target)
     try:
         installed = importlib_metadata.version("vllm")
     except importlib_metadata.PackageNotFoundError:
@@ -107,14 +112,19 @@ def ensure_vllm_pin(args: argparse.Namespace) -> None:
 
 def add_src_to_path(src_dir: Path) -> None:
     src_text = str(src_dir.resolve())
-    if src_text not in sys.path:
-        sys.path.insert(0, src_text)
+    add_pythonpath(Path(src_text))
+
+
+def add_pythonpath(path: Path) -> None:
+    path_text = str(path.resolve())
+    if path_text not in sys.path:
+        sys.path.insert(0, path_text)
     existing = os.environ.get("PYTHONPATH")
     if existing:
-        if src_text not in existing.split(os.pathsep):
-            os.environ["PYTHONPATH"] = src_text + os.pathsep + existing
+        if path_text not in existing.split(os.pathsep):
+            os.environ["PYTHONPATH"] = path_text + os.pathsep + existing
     else:
-        os.environ["PYTHONPATH"] = src_text
+        os.environ["PYTHONPATH"] = path_text
 
 
 def register_olmo3sink(src_dir: Path, skip: bool) -> None:
@@ -592,6 +602,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-reinstall-vllm", type=str_to_bool, default=False)
     parser.add_argument("--vllm-wheel-url", default=DEFAULT_VLLM_RUNTIME_WHEEL_URL)
     parser.add_argument("--vllm-version-fragment", default=DEFAULT_VLLM_VERSION_FRAGMENT)
+    parser.add_argument("--vllm-install-dir", default=DEFAULT_VLLM_INSTALL_DIR)
     parser.add_argument("--out-json", default=None, help="Optional path for benchmark metrics JSON.")
     parser.add_argument("--print-preview-chars", type=int, default=500)
     return parser.parse_args()
