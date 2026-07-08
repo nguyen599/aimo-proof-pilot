@@ -59,6 +59,15 @@ class OperatorUploadQueueBusy(RuntimeError):
     pass
 
 
+def default_operator_work_dir() -> str:
+    configured = os.environ.get("OLMO_OPERATOR_WORK_DIR", "").strip()
+    if configured:
+        return configured
+    if Path("/dev/shm").is_dir() and os.access("/dev/shm", os.W_OK):
+        return "/dev/shm/olmo_operator"
+    return f"/tmp/olmo_operator_{sanitize_slug_part(os.uname().nodename or 'host')}"
+
+
 def add_operator_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--operator_mode",
@@ -223,7 +232,7 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--operator_output_upload_queue_path",
-        default="/tmp/olmo_operator_output_upload.lock",
+        default=os.environ.get("OLMO_OPERATOR_OUTPUT_UPLOAD_QUEUE_PATH", "/tmp/olmo_operator_output_upload.lock"),
         help=(
             "Filesystem lock path used to serialize Git output uploads in finish order. "
             "Set empty to disable. This works best when /tmp is shared across nodes."
@@ -237,8 +246,11 @@ def add_operator_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--operator_work_dir",
-        default="/tmp/olmo_operator",
-        help="Writable local work directory for operator command downloads and output files.",
+        default=default_operator_work_dir(),
+        help=(
+            "Writable local work directory for operator command downloads and output files. "
+            "Defaults to node-local /dev/shm to avoid shared-filesystem Git checkout locks."
+        ),
     )
 
 
@@ -346,8 +358,14 @@ def clone_github_git_repo(args: argparse.Namespace, repo_url: str, repo_dir: Pat
 
 def operator_github_git_dir(args: argparse.Namespace, repo: str) -> Path:
     node_label = operator_node_label(args)
+    host_label = sanitize_slug_part(os.uname().nodename or "host")
     repo_slug = hashlib.sha256(repo.encode("utf-8")).hexdigest()[:12]
-    return Path(args.operator_work_dir).expanduser() / f"node{node_label}" / "github_git" / f"{repo_slug}_pid{os.getpid()}"
+    return (
+        Path(args.operator_work_dir).expanduser()
+        / f"node{node_label}_{host_label}"
+        / "github_git"
+        / f"{repo_slug}_pid{os.getpid()}"
+    )
 
 
 def github_git_lock(args: argparse.Namespace, repo: str, branch: str) -> threading.RLock:
@@ -724,6 +742,11 @@ def operator_output_repo(args: argparse.Namespace) -> str:
 
 
 def operator_node_label(args: argparse.Namespace) -> str:
+    if getattr(args, "operator_mode", "false") == "true":
+        for name in ("OLMO_OPERATOR_NODE_LABEL", "OPERATOR_NODE_LABEL", "GLOBAL_RANK", "NODE_RANK", "SLURM_NODEID", "RANK"):
+            value = os.environ.get(name)
+            if value not in {None, ""}:
+                return str(value)
     node_rank = getattr(args, "node_rank", None)
     if node_rank is not None:
         return str(node_rank)
