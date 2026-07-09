@@ -62,6 +62,10 @@ fi
 export REMOTE_SHELL_CLIENT_PY="$CLIENT_SRC"
 echo "remote_shell_client=${REMOTE_SHELL_CLIENT_PY}"
 
+START_SCRIPT="${RUN}/start-relay-daemon-${SPACE_SLUG}.sh"
+LOG_FILE="${LOGS}/relay-daemon-${SPACE_SLUG}.log"
+PID_FILE="${RUN}/relay-daemon-${SPACE_SLUG}.pid"
+
 EXISTING_FILE="${RUN}/remote-shell-client-existing-${SPACE_SLUG}.txt"
 if "$PY" - "$RELAY_SPACE" > "$EXISTING_FILE" <<'PY'
 import os
@@ -99,13 +103,16 @@ then
     exit 0
 fi
 
-START_SCRIPT="${RUN}/start-relay-daemon-${SPACE_SLUG}.sh"
-LOG_FILE="${LOGS}/relay-daemon-${SPACE_SLUG}.log"
-PID_FILE="${RUN}/relay-daemon-${SPACE_SLUG}.pid"
+if pgrep -af "$START_SCRIPT" >/tmp/remote-shell-wrapper-existing.txt 2>/dev/null; then
+    echo "remote-shell restart wrapper already running for ${RELAY_SPACE}:"
+    cat /tmp/remote-shell-wrapper-existing.txt
+    exit 0
+fi
 
 cat > "$START_SCRIPT" <<'EOF'
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
+RUN=/tmp/imochallenge/run
 PYTHON_SITE=/tmp/imochallenge/python_site
 PY="${PY:-$(command -v python3 || command -v python || echo /usr/bin/python3)}"
 export PYTHONPATH="${PYTHON_SITE}:${PYTHONPATH:-}"
@@ -121,7 +128,24 @@ CLIENT_PY="${REMOTE_SHELL_CLIENT_PY:-/app/remote-shell/daemon/client.py}"
 if [ ! -f "$CLIENT_PY" ]; then
     CLIENT_PY="/tmp/aimo-proof-pilot/remote-shell/daemon/client.py"
 fi
-exec "$PY" "$CLIENT_PY"
+SPACE_SLUG="${RELAY_SPACE//\//_}"
+SPACE_SLUG="${SPACE_SLUG//[^A-Za-z0-9_.-]/_}"
+LOCK_FILE="${RUN}/relay-daemon-${SPACE_SLUG}.lock"
+RESTART_DELAY="${REMOTE_SHELL_RESTART_DELAY:-5}"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "$(date -u +%FT%TZ) remote-shell restart wrapper already holds lock=${LOCK_FILE}; exiting"
+    exit 0
+fi
+attempt=0
+while true; do
+    attempt=$((attempt + 1))
+    echo "$(date -u +%FT%TZ) starting remote-shell client attempt=${attempt} relay_space=${RELAY_SPACE} client_id=${CLIENT_ID} client_py=${CLIENT_PY}"
+    "$PY" "$CLIENT_PY"
+    rc=$?
+    echo "$(date -u +%FT%TZ) remote-shell client exited rc=${rc}; restarting in ${RESTART_DELAY}s"
+    sleep "$RESTART_DELAY"
+done
 EOF
 chmod +x "$START_SCRIPT"
 
