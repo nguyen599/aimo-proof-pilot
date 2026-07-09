@@ -3152,11 +3152,11 @@ def prepare_runtime_training_dependencies(
             megatron_dir,
             prime_rl_runtime_vllm_expected_fragment(),
         )
-        if (
-            os.environ.get("PRIME_RL_VLLM_OVERRIDE", "0") == "1"
-            or os.environ.get("VLLM_SKIP_DEEPSEEK_V4_SPARSE_MLA_WARMUP", "0") == "1"
-        ):
-            patch_runtime_vllm_pr47258(site_dir)
+        # if (
+        #     os.environ.get("PRIME_RL_VLLM_OVERRIDE", "0") == "1"
+        #     or os.environ.get("VLLM_SKIP_DEEPSEEK_V4_SPARSE_MLA_WARMUP", "0") == "1"
+        # ):
+        #     patch_runtime_vllm_pr47258(site_dir)
         if te_required:
             te_ok, te_details = runtime_dependency_probe(
                 site_dir,
