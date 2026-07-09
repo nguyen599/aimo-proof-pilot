@@ -3584,7 +3584,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         engine_path = baked_engine_path()
         log(f"Using baked train engine {engine_path}")
-        ensure_runtime_training_dependencies(wrapper_args, forwarded_args)
+        # ensure_runtime_training_dependencies(wrapper_args, forwarded_args)
         exec_engine(engine_path, forwarded_args)
     return 0
 
