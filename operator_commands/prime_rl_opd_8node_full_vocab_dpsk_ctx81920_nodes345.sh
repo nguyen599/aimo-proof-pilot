@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Standalone multi-node Prime-RL OPD run for the 6-node operator cluster.
+# Standalone multi-node Prime-RL OPD run for the 8-node operator cluster.
 # Default full-cluster layout:
 #   Node 0: trainer + orchestrator, 8 GPUs
-#   Nodes 1,2,3,4: student/policy vLLM rollout, 8 GPUs each
-#   Node 5: DeepSeek-V4-Flash teacher vLLM hidden-state scorer, 8 GPUs
+#   Nodes 1,2,3,4,5,6: student/policy vLLM rollout, 8 GPUs each
+#   Node 7: DeepSeek-V4-Flash teacher vLLM hidden-state scorer, 8 GPUs
 #
-# To restore the older 3-node layout, set PRIME_NODE_LAYOUT=3node:
+# To restore older layouts, set PRIME_NODE_LAYOUT=6node or PRIME_NODE_LAYOUT=3node:
+#   6node: node 0 trainer, nodes 1,2,3,4 policy, node 5 teacher.
 #   Node 3: trainer, node 4: policy, node 5: teacher.
 # The explicit PRIME_TRAIN_NODE, PRIME_POLICY_NODES, and PRIME_TEACHER_NODE
 # variables override both layouts.
 
 NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
 
-case "${PRIME_NODE_LAYOUT:-6node}" in
+case "${PRIME_NODE_LAYOUT:-8node}" in
   3node|345)
     DEFAULT_TRAIN_NODE="3"
     DEFAULT_POLICY_NODES="4"
@@ -25,8 +26,13 @@ case "${PRIME_NODE_LAYOUT:-6node}" in
     DEFAULT_POLICY_NODES="1,2,3,4"
     DEFAULT_TEACHER_NODE="5"
     ;;
+  8node|full8)
+    DEFAULT_TRAIN_NODE="0"
+    DEFAULT_POLICY_NODES="1,2,3,4,5,6"
+    DEFAULT_TEACHER_NODE="7"
+    ;;
   *)
-    echo "[prime-opd] invalid PRIME_NODE_LAYOUT=${PRIME_NODE_LAYOUT}; expected 6node or 3node" >&2
+    echo "[prime-opd] invalid PRIME_NODE_LAYOUT=${PRIME_NODE_LAYOUT}; expected 8node, 6node, or 3node" >&2
     exit 1
     ;;
 esac
@@ -80,7 +86,7 @@ else
   exit 0
 fi
 
-RUN_NAME="${OLMO_RUN_DIR_NAME:-${PRIME_3NODE_RUN_NAME:-prime_rl_opd_full_vocab_dpsk_ctx81920_multinode}}"
+RUN_NAME="${OLMO_RUN_DIR_NAME:-${PRIME_3NODE_RUN_NAME:-prime_rl_opd_full_vocab_dpsk_ctx8192_8node}}"
 LOCK_RUN_NAME="$(printf '%s' "${RUN_NAME}" | tr -c 'A-Za-z0-9_.-' '_')"
 
 # If an earlier command was stopped while waiting for remote endpoints, its
@@ -340,10 +346,10 @@ OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${TMP_ROOT}/output}"
 LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${TMP_ROOT}/logs}"
 CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME}_${PRIME_COMPONENT_ROLE}}"
 
-CTX_LEN="${PRIME_OPD_CTX_LEN:-81920}"
-VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-98304}"
-COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-81920}"
-EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-81920}"
+CTX_LEN="${PRIME_OPD_CTX_LEN:-8192}"
+VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-16384}"
+COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-8192}"
+EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-8192}"
 BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 # DeepSeek-V4-Flash is close to the H200 memory limit even in FP8/MXFP4.
 # The teacher endpoint is used for serialized hidden-state scoring, so keep its
@@ -353,7 +359,7 @@ if (( TEACHER_BATCHED_TOKENS < VLLM_CTX_LEN )); then
   echo "[prime-opd-3node] raising teacher max_num_batched_tokens from ${TEACHER_BATCHED_TOKENS} to ${VLLM_CTX_LEN} to satisfy vLLM max_model_len validation"
   TEACHER_BATCHED_TOKENS="${VLLM_CTX_LEN}"
 fi
-MAX_STEPS="${MAX_TRAIN_STEPS:-1000}"
+MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
 GROUP_SIZE="${PRIME_GROUP_SIZE:-2}"
 INFLIGHT_PER_POLICY_NODE="${PRIME_OPD_INFLIGHT_ROLLOUTS_PER_POLICY_NODE:-48}"
