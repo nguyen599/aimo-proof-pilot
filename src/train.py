@@ -832,16 +832,16 @@ def prepare_prime_rl_checkout_for_install(prime_rl_dir: Path) -> None:
     submodule_paths = prime_rl_runtime_submodule_paths()
     if submodule_paths:
         log("Prime-RL runtime submodules: " + " ".join(submodule_paths))
-        run_git(["submodule", "sync", "--", *submodule_paths], cwd=prime_rl_dir, retry=False)
+        run_git(["submodule", "sync", "--", *submodule_paths], cwd=prime_rl_dir, retry=True)
         run_git(
             ["submodule", "update", "--init", "--depth", "1", "--", *submodule_paths],
             cwd=prime_rl_dir,
-            retry=False,
+            retry=True,
         )
     else:
         log("Prime-RL runtime submodules: all")
-        run_git(["submodule", "sync", "--recursive"], cwd=prime_rl_dir, retry=False)
-        run_git(["submodule", "update", "--init", "--recursive"], cwd=prime_rl_dir, retry=False)
+        run_git(["submodule", "sync", "--recursive"], cwd=prime_rl_dir, retry=True)
+        run_git(["submodule", "update", "--init", "--recursive"], cwd=prime_rl_dir, retry=True)
     log("Prime-RL submodules are ready")
 
 

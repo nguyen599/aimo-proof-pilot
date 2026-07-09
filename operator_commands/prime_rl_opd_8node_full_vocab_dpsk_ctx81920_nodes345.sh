@@ -151,6 +151,12 @@ export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-olmo3-prime-rl-full-vocab}"
 export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENCY:-1}"
+# GitHub DNS can be flaky on the NII nodes. Runtime repo fetches and Prime-RL
+# submodule setup are retryable, so keep the window long enough for transient
+# resolver outages without requiring a manual resubmit.
+export RUNTIME_GIT_RETRY_ATTEMPTS="${RUNTIME_GIT_RETRY_ATTEMPTS:-12}"
+export RUNTIME_GIT_RETRY_BASE_SECONDS="${RUNTIME_GIT_RETRY_BASE_SECONDS:-10}"
+export RUNTIME_GIT_RETRY_MAX_SECONDS="${RUNTIME_GIT_RETRY_MAX_SECONDS:-90}"
 # Pin Prime-RL runtime vLLM to the wrapper's known-good wheel by default.
 # The baked vLLM 0.24 image currently fails policy FP8 startup with an internal
 # CUTLASS W8A8 GEMM error for OLMo3Sink; the pinned wheel matches the last
