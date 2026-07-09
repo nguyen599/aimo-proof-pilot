@@ -116,7 +116,7 @@ if [[ "${PRIME_3NODE_KILL_STALE_ROLE_SHELLS:-0}" == "1" ]]; then
   fi
 fi
 
-ROLE_LOCK="/dev/shm/prime_rl_opd_3node_${LOCK_RUN_NAME}_${NODE_LABEL}_${PRIME_COMPONENT_ROLE}.lock"
+ROLE_LOCK="${PRIME_3NODE_ROLE_LOCK:-/tmp/prime_rl_opd_3node_${LOCK_RUN_NAME}_${NODE_LABEL}_${PRIME_COMPONENT_ROLE}.lock}"
 exec 29>"${ROLE_LOCK}"
 if ! flock -n 29; then
   echo "[prime-opd-3node] node=${NODE_LABEL} role=${PRIME_COMPONENT_ROLE} already running; lock=${ROLE_LOCK}; skipping duplicate operator."
