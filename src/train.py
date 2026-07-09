@@ -2169,6 +2169,80 @@ def stable_subprocess_cwd(cwd: Path | None = None, *, fallback: Path | None = No
     return "/"
 
 
+def runtime_dependency_retry_attempts() -> int:
+    return max(
+        1,
+        parse_int(os.environ.get("RUNTIME_DEPENDENCY_RETRY_ATTEMPTS"))
+        or DEFAULT_RUNTIME_DEP_RETRY_ATTEMPTS,
+    )
+
+
+def runtime_dependency_retry_base_seconds() -> float:
+    return max(
+        0.0,
+        parse_float(
+            os.environ.get("RUNTIME_DEPENDENCY_RETRY_BASE_SECONDS"),
+            DEFAULT_RUNTIME_DEP_RETRY_BASE_SECONDS,
+        ),
+    )
+
+
+def runtime_dependency_retry_max_seconds() -> float:
+    return max(
+        0.0,
+        parse_float(
+            os.environ.get("RUNTIME_DEPENDENCY_RETRY_MAX_SECONDS"),
+            DEFAULT_RUNTIME_DEP_RETRY_MAX_SECONDS,
+        ),
+    )
+
+
+def run_runtime_install_command(
+    command: list[str],
+    *,
+    label: str,
+    cwd: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    attempts = runtime_dependency_retry_attempts()
+    last_process: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1, attempts + 1):
+        process = subprocess.run(
+            command,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        if process.returncode == 0:
+            return process
+        last_process = process
+        if attempt >= attempts:
+            break
+        sleep_seconds = min(
+            runtime_dependency_retry_max_seconds(),
+            runtime_dependency_retry_base_seconds() * (2 ** (attempt - 1)),
+        )
+        log(
+            "Runtime %s install command failed with exit code %d on attempt %d/%d; retrying in %.1fs.\n"
+            "stdout:\n%s\nstderr:\n%s"
+            % (
+                label,
+                process.returncode,
+                attempt,
+                attempts,
+                sleep_seconds,
+                redact_secret(process.stdout),
+                redact_secret(process.stderr),
+            )
+        )
+        time.sleep(sleep_seconds)
+    if last_process is None:
+        raise RuntimeError(f"Runtime {label} install command did not run")
+    return last_process
+
+
 def install_python_target(source: Path | str, site_dir: Path, label: str, *, no_deps: bool = True) -> None:
     site_dir.mkdir(parents=True, exist_ok=True)
     if "github.com" in str(source):
@@ -2195,12 +2269,10 @@ def install_python_target(source: Path | str, site_dir: Path, label: str, *, no_
         command.insert(command.index("--target"), "--no-deps")
     mode = "without dependency resolution" if no_deps else "with dependency resolution"
     log(f"Installing runtime {label} into {site_dir} {mode}")
-    process = subprocess.run(
+    process = run_runtime_install_command(
         command,
+        label=label,
         cwd=stable_subprocess_cwd(fallback=site_dir),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
         env=env,
     )
     if process.returncode != 0:
@@ -2257,12 +2329,10 @@ def install_python_global_requirements(
         mode_parts.append("with upgrade")
     mode = f" ({', '.join(mode_parts)})" if mode_parts else ""
     log(f"Installing global runtime {label} requirements{mode}: {' '.join(requirements)}")
-    process = subprocess.run(
+    process = run_runtime_install_command(
         command,
+        label=f"{label} requirements",
         cwd=stable_subprocess_cwd(cwd),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
     )
     if process.returncode != 0:
         raise RuntimeError(
@@ -2345,12 +2415,10 @@ def install_python_requirements(
         f"Installing runtime {label} requirements into {site_dir} {mode}: "
         f"{' '.join(requirements)}"
     )
-    process = subprocess.run(
+    process = run_runtime_install_command(
         command,
+        label=f"{label} requirements",
         cwd=stable_subprocess_cwd(cwd, fallback=site_dir),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
         env=env,
     )
     if process.returncode != 0:
