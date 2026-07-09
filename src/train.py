@@ -77,6 +77,8 @@ DEFAULT_GIT_RETRY_MAX_SECONDS = 60.0
 DEFAULT_RUNTIME_DEP_RETRY_ATTEMPTS = 5
 DEFAULT_RUNTIME_DEP_RETRY_BASE_SECONDS = 5.0
 DEFAULT_RUNTIME_DEP_RETRY_MAX_SECONDS = 60.0
+DEFAULT_RUNTIME_PIP_RETRIES = 12
+DEFAULT_RUNTIME_PIP_TIMEOUT_SECONDS = 120.0
 DEFAULT_RUN_DIR_MARKER_TIMEOUT_SECONDS = 300.0
 DEFAULT_RUN_DIR_MARKER_POLL_SECONDS = 0.5
 DEFAULT_GRPO_RUNTIME_VLLM_VERSION = "0.23.1rc1.dev699+gf5a8d7337"
@@ -2243,6 +2245,18 @@ def run_runtime_install_command(
     return last_process
 
 
+def runtime_pip_retry_args() -> list[str]:
+    retries = max(
+        0,
+        parse_int(os.environ.get("RUNTIME_PIP_RETRIES")) or DEFAULT_RUNTIME_PIP_RETRIES,
+    )
+    timeout = max(
+        1.0,
+        parse_float(os.environ.get("RUNTIME_PIP_TIMEOUT_SECONDS"), DEFAULT_RUNTIME_PIP_TIMEOUT_SECONDS),
+    )
+    return ["--retries", str(retries), "--timeout", f"{timeout:.1f}"]
+
+
 def install_python_target(source: Path | str, site_dir: Path, label: str, *, no_deps: bool = True) -> None:
     site_dir.mkdir(parents=True, exist_ok=True)
     if "github.com" in str(source):
@@ -2257,6 +2271,7 @@ def install_python_target(source: Path | str, site_dir: Path, label: str, *, no_
         "pip",
         "install",
         "--disable-pip-version-check",
+        *runtime_pip_retry_args(),
         "--ignore-requires-python",
         "--no-input",
         "--no-cache-dir",
@@ -2306,6 +2321,7 @@ def install_python_global_requirements(
         "pip",
         "install",
         "--disable-pip-version-check",
+        *runtime_pip_retry_args(),
         "--ignore-requires-python",
         "--no-input",
         "--no-cache-dir",
@@ -2398,6 +2414,7 @@ def install_python_requirements(
         "pip",
         "install",
         "--disable-pip-version-check",
+        *runtime_pip_retry_args(),
         "--ignore-requires-python",
         "--no-input",
         "--no-cache-dir",

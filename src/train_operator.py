@@ -282,26 +282,92 @@ def github_git_env() -> dict[str, str]:
     return env
 
 
-def run_github_git(args: list[str], cwd: Path | None = None) -> str:
-    timeout = float(os.environ.get("OPERATOR_GIT_TIMEOUT_SECONDS", "90"))
-    try:
-        process = subprocess.run(
-            ["git", *args],
-            cwd=str(cwd) if cwd else None,
-            env=github_git_env(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout,
+def operator_git_retry_config() -> tuple[int, float, float]:
+    attempts = int(
+        os.environ.get(
+            "OPERATOR_GIT_RETRY_ATTEMPTS",
+            os.environ.get("RUNTIME_GIT_RETRY_ATTEMPTS", "8"),
         )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
-            f"git {' '.join(args)} timed out after {timeout:.1f}s"
-        ) from exc
-    if process.returncode != 0:
-        detail = (process.stderr or process.stdout).strip()
-        raise RuntimeError(f"git {' '.join(args)} failed with exit code {process.returncode}: {detail}")
-    return process.stdout.strip()
+    )
+    base_seconds = float(
+        os.environ.get(
+            "OPERATOR_GIT_RETRY_BASE_SECONDS",
+            os.environ.get("RUNTIME_GIT_RETRY_BASE_SECONDS", "2"),
+        )
+    )
+    max_seconds = float(
+        os.environ.get(
+            "OPERATOR_GIT_RETRY_MAX_SECONDS",
+            os.environ.get("RUNTIME_GIT_RETRY_MAX_SECONDS", "45"),
+        )
+    )
+    return max(1, attempts), max(0.0, base_seconds), max(0.0, max_seconds)
+
+
+def github_git_error_is_retryable(detail: str) -> bool:
+    lowered = detail.lower()
+    retry_markers = (
+        "could not resolve host",
+        "failed to resolve",
+        "temporary failure in name resolution",
+        "network is unreachable",
+        "failed to connect",
+        "connection timed out",
+        "connection reset",
+        "connection refused",
+        "remote end hung up unexpectedly",
+        "early eof",
+        "the remote end hung up",
+        "tls connection was non-properly terminated",
+        "gnutls recv error",
+        "operation timed out",
+        "http/2 stream",
+        "rpc failed",
+        "timed out after",
+    )
+    return any(marker in lowered for marker in retry_markers)
+
+
+def run_github_git(args: list[str], cwd: Path | None = None, retry: bool = True) -> str:
+    timeout = float(os.environ.get("OPERATOR_GIT_TIMEOUT_SECONDS", "90"))
+    attempts, base_seconds, max_seconds = operator_git_retry_config() if retry else (1, 0.0, 0.0)
+    last_error: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            process = subprocess.run(
+                ["git", *args],
+                cwd=str(cwd) if cwd else None,
+                env=github_git_env(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            last_error = RuntimeError(f"git {' '.join(args)} timed out after {timeout:.1f}s")
+            retryable = True
+        else:
+            if process.returncode == 0:
+                return process.stdout.strip()
+            detail = (process.stderr or process.stdout).strip()
+            last_error = RuntimeError(
+                f"git {' '.join(args)} failed with exit code {process.returncode}: {detail}"
+            )
+            retryable = github_git_error_is_retryable(detail)
+        if not retryable or attempt >= attempts:
+            raise last_error
+        sleep_seconds = min(max_seconds, base_seconds * (2 ** (attempt - 1)))
+        sleep_seconds += random.uniform(0.0, min(5.0, sleep_seconds + 1.0))
+        logging.warning(
+            "Transient git failure for `git %s`; retrying (%d/%d) in %.1fs: %s",
+            " ".join(args),
+            attempt,
+            attempts,
+            sleep_seconds,
+            last_error,
+        )
+        time.sleep(sleep_seconds)
+    raise RuntimeError(f"git {' '.join(args)} failed unexpectedly: {last_error}")
 
 
 def github_git_sparse_checkout_patterns(args: argparse.Namespace, branch: str) -> list[str]:
@@ -340,26 +406,97 @@ def disable_github_git_sparse_checkout(repo_dir: Path) -> None:
         sparse_file.unlink()
 
 
+def clone_github_git_repo_once(
+    args: argparse.Namespace,
+    repo_url: str,
+    repo_dir: Path,
+    branch: str,
+    sparse_patterns: list[str],
+) -> None:
+    if sparse_patterns:
+        run_github_git(
+            ["clone", "--depth", "1", "--no-checkout", "--branch", branch, repo_url, str(repo_dir)],
+            retry=False,
+        )
+        configure_github_git_sparse_checkout(repo_dir, sparse_patterns)
+        run_github_git(["checkout", branch], cwd=repo_dir)
+    else:
+        run_github_git(["clone", "--depth", "1", "--branch", branch, repo_url, str(repo_dir)], retry=False)
+
+
+def clone_github_git_repo_with_retries(
+    args: argparse.Namespace,
+    repo_url: str,
+    repo_dir: Path,
+    branch: str,
+    sparse_patterns: list[str],
+    attempts: int,
+    base_seconds: float,
+    max_seconds: float,
+) -> None:
+    last_error: BaseException | None = None
+    repo_dir.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(1, max(1, attempts) + 1):
+        tmp_dir = repo_dir.with_name(
+            f".{repo_dir.name}.tmp-{os.getpid()}-{secrets.token_hex(4)}"
+        )
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        try:
+            clone_github_git_repo_once(args, repo_url, tmp_dir, branch, sparse_patterns)
+            if repo_dir.exists():
+                shutil.rmtree(repo_dir, ignore_errors=True)
+            tmp_dir.rename(repo_dir)
+            return
+        except Exception as exc:
+            last_error = exc
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            retryable = github_git_error_is_retryable(str(exc))
+            if not retryable or attempt >= attempts:
+                raise
+            sleep_seconds = min(max_seconds, base_seconds * (2 ** (attempt - 1)))
+            sleep_seconds += random.uniform(0.0, min(8.0, sleep_seconds + 1.0))
+            logging.warning(
+                "Transient git clone failure for %s branch %s; retrying (%d/%d) in %.1fs: %s",
+                repo_url,
+                branch,
+                attempt,
+                attempts,
+                sleep_seconds,
+                exc,
+            )
+            time.sleep(sleep_seconds)
+    raise RuntimeError(f"git clone failed after {attempts} attempts: {last_error}")
+
+
 def clone_github_git_repo(args: argparse.Namespace, repo_url: str, repo_dir: Path, branch: str) -> None:
     sparse_patterns = github_git_sparse_checkout_patterns(args, branch)
+    attempts, base_seconds, max_seconds = operator_git_retry_config()
     try:
-        if sparse_patterns:
-            run_github_git(["clone", "--depth", "1", "--no-checkout", "--branch", branch, repo_url, str(repo_dir)])
-            configure_github_git_sparse_checkout(repo_dir, sparse_patterns)
-            run_github_git(["checkout", branch], cwd=repo_dir)
-        else:
-            run_github_git(["clone", "--depth", "1", "--branch", branch, repo_url, str(repo_dir)])
+        clone_github_git_repo_with_retries(
+            args,
+            repo_url,
+            repo_dir,
+            branch,
+            sparse_patterns,
+            attempts,
+            base_seconds,
+            max_seconds,
+        )
         return
     except Exception:
         if branch == getattr(args, "operator_github_branch", "main"):
             raise
     base_branch = str(getattr(args, "operator_github_branch", "main"))
-    if sparse_patterns:
-        run_github_git(["clone", "--depth", "1", "--no-checkout", "--branch", base_branch, repo_url, str(repo_dir)])
-        configure_github_git_sparse_checkout(repo_dir, sparse_patterns)
-        run_github_git(["checkout", base_branch], cwd=repo_dir)
-    else:
-        run_github_git(["clone", "--depth", "1", "--branch", base_branch, repo_url, str(repo_dir)])
+    clone_github_git_repo_with_retries(
+        args,
+        repo_url,
+        repo_dir,
+        base_branch,
+        sparse_patterns,
+        attempts,
+        base_seconds,
+        max_seconds,
+    )
     run_github_git(["checkout", "-B", branch], cwd=repo_dir)
 
 
