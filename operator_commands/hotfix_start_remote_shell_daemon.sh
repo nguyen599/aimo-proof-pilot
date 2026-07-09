@@ -1,6 +1,6 @@
 set -euo pipefail
 
-RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026-challenge/control-panel}}}"
+RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026-challenge/control-panel-nguyen}}}"
 SPACE_SLUG="${RELAY_SPACE//\//_}"
 SPACE_SLUG="${SPACE_SLUG//[^A-Za-z0-9_.-]/_}"
 LOGS="/tmp/imochallenge/logs"
@@ -120,7 +120,7 @@ export GRADIO_ANALYTICS_ENABLED=False
 export HF_HUB_DISABLE_TELEMETRY=1
 export DO_NOT_TRACK=1
 export POLL_INTERVAL="${POLL_INTERVAL:-5}"
-export RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026-challenge/control-panel}}}"
+export RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026-challenge/control-panel-nguyen}}}"
 NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
 HOST="$(hostname 2>/dev/null || echo unknown-host)"
 export CLIENT_ID="${CLIENT_ID:-node${NODE_LABEL}-${HOST}}"
