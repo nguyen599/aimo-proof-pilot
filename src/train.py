@@ -841,6 +841,41 @@ def prime_rl_runtime_submodule_paths() -> list[str]:
     return paths
 
 
+PRIME_RL_INSTALLABLE_SUBMODULE_MARKERS = {
+    "deps/pydantic-config": ("pyproject.toml", "setup.py", "setup.cfg"),
+    "deps/verifiers": ("pyproject.toml", "setup.py", "setup.cfg"),
+    "deps/renderers": ("pyproject.toml", "setup.py", "setup.cfg"),
+}
+
+
+def has_python_project_marker(package_dir: Path) -> bool:
+    return any((package_dir / marker).exists() for marker in ("pyproject.toml", "setup.py", "setup.cfg"))
+
+
+def missing_prime_rl_installable_submodules(prime_rl_dir: Path, submodule_paths: list[str]) -> list[str]:
+    paths_to_check = submodule_paths or list(PRIME_RL_INSTALLABLE_SUBMODULE_MARKERS)
+    missing = []
+    for relative_path in paths_to_check:
+        markers = PRIME_RL_INSTALLABLE_SUBMODULE_MARKERS.get(relative_path)
+        if markers is None:
+            continue
+        package_dir = prime_rl_dir / relative_path
+        if not package_dir.is_dir() or not any((package_dir / marker).exists() for marker in markers):
+            missing.append(relative_path)
+    return missing
+
+
+def reset_prime_rl_submodule_paths(prime_rl_dir: Path, submodule_paths: list[str]) -> None:
+    if not submodule_paths:
+        return
+    try:
+        run_git(["submodule", "deinit", "-f", "--", *submodule_paths], cwd=prime_rl_dir, retry=False)
+    except RuntimeError as exc:
+        log(f"WARNING: Prime-RL submodule deinit failed before retry; continuing: {redact_secret(str(exc))}")
+    for relative_path in submodule_paths:
+        shutil.rmtree(prime_rl_dir / relative_path, ignore_errors=True)
+
+
 def prepare_prime_rl_checkout_for_install(prime_rl_dir: Path) -> None:
     if not (prime_rl_dir / ".git").is_dir():
         raise RuntimeError(f"Prime-RL runtime dir is not a Git checkout: {prime_rl_dir}")
@@ -860,18 +895,37 @@ def prepare_prime_rl_checkout_for_install(prime_rl_dir: Path) -> None:
             run_git(["config", "--local", "--add", key, value], cwd=prime_rl_dir, retry=False)
 
     submodule_paths = prime_rl_runtime_submodule_paths()
-    if submodule_paths:
-        log("Prime-RL runtime submodules: " + " ".join(submodule_paths))
-        run_git(["submodule", "sync", "--", *submodule_paths], cwd=prime_rl_dir, retry=True)
-        run_git(
-            ["submodule", "update", "--init", "--depth", "1", "--", *submodule_paths],
-            cwd=prime_rl_dir,
-            retry=True,
+    attempts = git_retry_attempts()
+    for attempt in range(1, attempts + 1):
+        if submodule_paths:
+            log("Prime-RL runtime submodules: " + " ".join(submodule_paths))
+            run_git(["submodule", "sync", "--", *submodule_paths], cwd=prime_rl_dir, retry=True)
+            run_git(
+                ["submodule", "update", "--init", "--depth", "1", "--", *submodule_paths],
+                cwd=prime_rl_dir,
+                retry=True,
+            )
+        else:
+            log("Prime-RL runtime submodules: all")
+            run_git(["submodule", "sync", "--recursive"], cwd=prime_rl_dir, retry=True)
+            run_git(["submodule", "update", "--init", "--recursive"], cwd=prime_rl_dir, retry=True)
+
+        missing = missing_prime_rl_installable_submodules(prime_rl_dir, submodule_paths)
+        if not missing:
+            break
+        if attempt >= attempts:
+            raise RuntimeError(
+                "Prime-RL submodule checkout incomplete after %d attempt(s): %s"
+                % (attempts, ", ".join(missing))
+            )
+        sleep_seconds = min(git_retry_max_seconds(), git_retry_base_seconds() * (2 ** (attempt - 1)))
+        log(
+            "Prime-RL submodule checkout missing install markers on attempt %d/%d: %s; "
+            "resetting those paths and retrying in %.1fs"
+            % (attempt, attempts, ", ".join(missing), sleep_seconds)
         )
-    else:
-        log("Prime-RL runtime submodules: all")
-        run_git(["submodule", "sync", "--recursive"], cwd=prime_rl_dir, retry=True)
-        run_git(["submodule", "update", "--init", "--recursive"], cwd=prime_rl_dir, retry=True)
+        reset_prime_rl_submodule_paths(prime_rl_dir, missing)
+        time.sleep(sleep_seconds)
     log("Prime-RL submodules are ready")
 
 
@@ -1967,6 +2021,10 @@ def prime_rl_config_requirements(prime_rl_dir: Path) -> list[str]:
     ):
         package_dir = prime_rl_dir / relative_path
         if package_dir.is_dir():
+            if not has_python_project_marker(package_dir):
+                raise RuntimeError(
+                    f"Prime-RL config package directory is incomplete or not installable: {package_dir}"
+                )
             requirements.append(str(package_dir))
     return requirements
 
