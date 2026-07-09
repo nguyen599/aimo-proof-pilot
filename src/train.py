@@ -228,7 +228,6 @@ PROTECTED_RUNTIME_OVERLAY_PACKAGES = (
     "numpy",
     "nvidia",
     "safetensors",
-    "tokenizers",
     "torch",
     "torchao",
     "torchaudio",
