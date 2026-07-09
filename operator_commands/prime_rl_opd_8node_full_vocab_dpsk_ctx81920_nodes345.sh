@@ -391,8 +391,12 @@ POLICY_DP_RPC_PORT="${PRIME_VLLM_DATA_PARALLEL_RPC_PORT:-$((37000 + NODE_LABEL))
 TEACHER_DP_RPC_PORT="${PRIME_OPD_TEACHER_VLLM_DATA_PARALLEL_RPC_PORT:-38005}"
 echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} max_num_seqs=${POLICY_MAX_NUM_SEQS} (${POLICY_REQS_PER_DP}/dp_rank) dp_rpc_port=${POLICY_DP_RPC_PORT}"
 echo "[prime-opd-3node] teacher_dp_rpc_port=${TEACHER_DP_RPC_PORT}"
-DFLASH_DRAFT_MODEL="${PRIME_DFLASH_DRAFT_MODEL:-}"
-if [[ -z "${DFLASH_DRAFT_MODEL}" ]]; then
+DFLASH_ENABLE="${PRIME_DFLASH_ENABLE:-0}"
+DFLASH_DRAFT_MODEL=""
+if [[ "${DFLASH_ENABLE}" == "1" ]]; then
+  DFLASH_DRAFT_MODEL="${PRIME_DFLASH_DRAFT_MODEL:-}"
+fi
+if [[ "${DFLASH_ENABLE}" == "1" && -z "${DFLASH_DRAFT_MODEL}" ]]; then
   for dflash_candidate in \
     "/tmp/models/dflash-32b-draft-v2test-phaseL" \
     "/tmp/model/dflash-32b-draft-v2test-phaseL"; do
@@ -437,7 +441,7 @@ PY
 if [[ -n "${DFLASH_DRAFT_MODEL}" ]]; then
   echo "[prime-opd-3node] policy DFlash enabled draft_model=${DFLASH_DRAFT_MODEL} num_speculative_tokens=${DFLASH_NUM_SPECULATIVE_TOKENS}"
 else
-  echo "[prime-opd-3node] policy DFlash disabled; set PRIME_DFLASH_DRAFT_MODEL to enable"
+  echo "[prime-opd-3node] policy DFlash disabled; set PRIME_DFLASH_ENABLE=1 to enable"
 fi
 POLICY_GPU_IDS_DEFAULT=""
 for ((gpu_idx = 0; gpu_idx < POLICY_GPU_COUNT; gpu_idx++)); do
