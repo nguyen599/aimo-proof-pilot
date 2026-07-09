@@ -594,6 +594,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_train_gpus 0 \
       --prime_infer_gpus 0 \
       --prime_opd_teacher_model "${TEACHER_MODEL_PATH}" \
+      --prime_opd_teacher_tokenizer_path "${MODEL_PATH}" \
       --prime_opd_start_teacher true \
       --prime_opd_teacher_gpu_ids "0,1,2,3,4,5,6,7" \
       --prime_opd_teacher_port "${TEACHER_PORT}" \
@@ -627,6 +628,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_vllm_tensor_parallel_size "${POLICY_TP}" \
       --prime_vllm_data_parallel_size "${POLICY_DP}" \
       --prime_opd_teacher_model "${TEACHER_MODEL_PATH}" \
+      --prime_opd_teacher_tokenizer_path "${MODEL_PATH}" \
       --prime_opd_start_teacher false \
       --prime_opd_teacher_base_url "${TEACHER_BASE_URL}" \
       --prime_opd_teacher_vllm_tensor_parallel_size "${PRIME_OPD_TEACHER_TP:-8}" \

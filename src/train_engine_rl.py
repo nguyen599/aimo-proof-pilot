@@ -700,6 +700,18 @@ def build_prime_teacher_inference_config(args: argparse.Namespace, output_dir: P
     if args.prime_opd_teacher_vllm_max_num_batched_tokens is not None:
         vllm_extra["max_num_batched_tokens"] = args.prime_opd_teacher_vllm_max_num_batched_tokens
 
+    model_config: dict[str, Any] = {
+        "name": args.prime_opd_teacher_model,
+        "dtype": args.prime_opd_teacher_vllm_dtype,
+        "max_model_len": args.prime_opd_teacher_vllm_max_model_len,
+        "enforce_eager": args.prime_opd_teacher_vllm_enforce_eager,
+        "trust_remote_code": True,
+        "tool_call_parser": None,
+        "reasoning_parser": args.prime_opd_teacher_vllm_reasoning_parser,
+    }
+    if args.prime_opd_teacher_tokenizer_path:
+        model_config["tokenizer"] = args.prime_opd_teacher_tokenizer_path
+
     return {
         "root": {
             "output_dir": str(output_dir),
@@ -713,15 +725,7 @@ def build_prime_teacher_inference_config(args: argparse.Namespace, output_dir: P
             "host": "0.0.0.0",
             "port": args.prime_opd_teacher_port,
         },
-        "model": {
-            "name": args.prime_opd_teacher_model,
-            "dtype": args.prime_opd_teacher_vllm_dtype,
-            "max_model_len": args.prime_opd_teacher_vllm_max_model_len,
-            "enforce_eager": args.prime_opd_teacher_vllm_enforce_eager,
-            "trust_remote_code": True,
-            "tool_call_parser": None,
-            "reasoning_parser": args.prime_opd_teacher_vllm_reasoning_parser,
-        },
+        "model": model_config,
         "parallel": {
             "tp": args.prime_opd_teacher_vllm_tensor_parallel_size,
             "dp": args.prime_opd_teacher_vllm_data_parallel_size,
@@ -1195,6 +1199,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_vllm_reasoning_parser", default="deepseek_v4")
     parser.add_argument("--prime_vllm_extra", default=None)
     parser.add_argument("--prime_opd_teacher_model", default=None)
+    parser.add_argument("--prime_opd_teacher_tokenizer_path", default=None)
     parser.add_argument("--prime_opd_teacher_base_url", default=None)
     parser.add_argument("--prime_opd_start_teacher", type=parse_bool, default=True)
     parser.add_argument("--prime_opd_teacher_gpu_ids", default="3")
