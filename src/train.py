@@ -775,13 +775,40 @@ def wait_for_git_index_lock(runtime_dir: Path, label: str) -> None:
         raise RuntimeError(f"{label} Git lock still exists: {lock_path}")
 
 
+def clone_runtime_repo(repo: str, runtime_dir: Path, label: str) -> None:
+    attempts = git_retry_attempts()
+    runtime_dir.parent.mkdir(parents=True, exist_ok=True)
+    last_error: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        tmp_dir = runtime_dir.with_name(f".{runtime_dir.name}.clone-{os.getpid()}-{attempt}")
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        try:
+            log(f"Cloning {label} repo into {runtime_dir} (attempt {attempt}/{attempts})")
+            run_git(["clone", "--filter=blob:none", "--no-checkout", repo, str(tmp_dir)], retry=False)
+            if runtime_dir.exists():
+                raise RuntimeError(f"Runtime dir appeared while cloning {label} repo: {runtime_dir}")
+            tmp_dir.rename(runtime_dir)
+            return
+        except Exception as exc:
+            last_error = exc
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            if attempt >= attempts:
+                break
+            sleep_seconds = min(git_retry_max_seconds(), git_retry_base_seconds() * (2 ** (attempt - 1)))
+            log(
+                "Clone of %s repo failed on attempt %d/%d; retrying in %.1fs: %s"
+                % (label, attempt, attempts, sleep_seconds, redact_secret(str(exc)))
+            )
+            time.sleep(sleep_seconds)
+    raise RuntimeError(f"Failed to clone {label} repo into {runtime_dir}: {redact_secret(str(last_error))}")
+
+
 def ensure_runtime_repo(repo: str, ref: str, runtime_dir: Path, label: str) -> Path:
     if runtime_dir.exists() and not (runtime_dir / ".git").is_dir():
         raise RuntimeError(f"Runtime dir exists but is not a Git checkout: {runtime_dir}")
     if not runtime_dir.exists():
-        runtime_dir.parent.mkdir(parents=True, exist_ok=True)
-        log(f"Cloning {label} repo into {runtime_dir}")
-        run_git(["clone", "--filter=blob:none", "--no-checkout", repo, str(runtime_dir)])
+        clone_runtime_repo(repo, runtime_dir, label)
 
     wait_for_git_index_lock(runtime_dir, label)
     log(f"Fetching {label} ref {ref!r}")
