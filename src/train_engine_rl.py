@@ -578,6 +578,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "cp": args.prime_trainer_context_parallel_size,
             "cp_style": args.prime_trainer_cp_style,
             "fp8": args.prime_trainer_fp8,
+            "compile": None if args.prime_trainer_compile else "None",
         },
         "trainer_optim": trainer_optim,
         "trainer_full_vocab_distill": trainer_full_vocab_distill,
@@ -1165,6 +1166,16 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_trainer_context_parallel_size", "--prime_trainer_cp", type=int, default=1)
     parser.add_argument("--prime_trainer_cp_style", default="ulysses", choices=("ring", "ulysses"))
     parser.add_argument("--prime_trainer_fp8", type=parse_bool, default=False)
+    parser.add_argument(
+        "--prime_trainer_compile",
+        type=parse_bool,
+        default=True,
+        help=(
+            "Enable Prime-RL trainer torch.compile. Disable only for smoke tests or "
+            "trainer kernels that cannot be traced; vLLM inference remains compiled unless "
+            "its own eager flag is set."
+        ),
+    )
     parser.add_argument("--prime_renderer_reasoning_parser", default="think")
     parser.add_argument("--prime_vllm_tensor_parallel_size", type=int, default=1)
     parser.add_argument("--prime_vllm_data_parallel_size", type=int, default=1)

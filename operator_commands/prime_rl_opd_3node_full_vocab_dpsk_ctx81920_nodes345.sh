@@ -490,6 +490,7 @@ COMMON_ARGS=(
   --prime_trainer_fsdp_cpu_offload false
   --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
   --prime_trainer_fp8 "${PRIME_TRAINER_FP8:-true}"
+  --prime_trainer_compile "${PRIME_TRAINER_COMPILE:-true}"
   --prime_weight_broadcast_type "${PRIME_WEIGHT_BROADCAST_TYPE:-filesystem}"
   --prime_weight_broadcast_port "${PRIME_WEIGHT_BROADCAST_PORT:-29501}"
   --prime_weight_broadcast_timeout "${PRIME_WEIGHT_BROADCAST_TIMEOUT:-7200}"
