@@ -199,6 +199,8 @@ DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
     "beartype>=0.21.0",
     "datasets>=4.0.0",
     "transformers==5.13.0",
+    "sentencepiece",
+    "tiktoken",
     "wandb>=0.26.1",
     "wandb-workspaces>=0.4.3",
     "nltk>=3.9.1",
