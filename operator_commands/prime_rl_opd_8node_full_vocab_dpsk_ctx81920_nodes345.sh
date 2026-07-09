@@ -392,8 +392,15 @@ TEACHER_DP_RPC_PORT="${PRIME_OPD_TEACHER_VLLM_DATA_PARALLEL_RPC_PORT:-38005}"
 echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} max_num_seqs=${POLICY_MAX_NUM_SEQS} (${POLICY_REQS_PER_DP}/dp_rank) dp_rpc_port=${POLICY_DP_RPC_PORT}"
 echo "[prime-opd-3node] teacher_dp_rpc_port=${TEACHER_DP_RPC_PORT}"
 DFLASH_DRAFT_MODEL="${PRIME_DFLASH_DRAFT_MODEL:-}"
-if [[ -z "${DFLASH_DRAFT_MODEL}" && -d "/tmp/model/dflash-32b-draft-v2test-phaseL" ]]; then
-  DFLASH_DRAFT_MODEL="/tmp/model/dflash-32b-draft-v2test-phaseL"
+if [[ -z "${DFLASH_DRAFT_MODEL}" ]]; then
+  for dflash_candidate in \
+    "/tmp/models/dflash-32b-draft-v2test-phaseL" \
+    "/tmp/model/dflash-32b-draft-v2test-phaseL"; do
+    if [[ -f "${dflash_candidate}/config.json" ]]; then
+      DFLASH_DRAFT_MODEL="${dflash_candidate}"
+      break
+    fi
+  done
 fi
 DFLASH_NUM_SPECULATIVE_TOKENS="${PRIME_DFLASH_NUM_SPECULATIVE_TOKENS:-10}"
 POLICY_VLLM_EXTRA_DEFAULT="$(
