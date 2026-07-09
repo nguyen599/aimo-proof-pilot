@@ -376,12 +376,21 @@ POLICY_DP_RPC_PORT="${PRIME_VLLM_DATA_PARALLEL_RPC_PORT:-$((37000 + NODE_LABEL))
 TEACHER_DP_RPC_PORT="${PRIME_OPD_TEACHER_VLLM_DATA_PARALLEL_RPC_PORT:-38005}"
 echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} max_num_seqs=${POLICY_MAX_NUM_SEQS} (${POLICY_REQS_PER_DP}/dp_rank) dp_rpc_port=${POLICY_DP_RPC_PORT}"
 echo "[prime-opd-3node] teacher_dp_rpc_port=${TEACHER_DP_RPC_PORT}"
+DFLASH_DRAFT_MODEL="${PRIME_DFLASH_DRAFT_MODEL:-}"
+if [[ -z "${DFLASH_DRAFT_MODEL}" && -d "/tmp/model/dflash-32b-draft-v2test-phaseL" ]]; then
+  DFLASH_DRAFT_MODEL="/tmp/model/dflash-32b-draft-v2test-phaseL"
+fi
+DFLASH_NUM_SPECULATIVE_TOKENS="${PRIME_DFLASH_NUM_SPECULATIVE_TOKENS:-10}"
 POLICY_VLLM_EXTRA_DEFAULT="$(
-  POLICY_TP="${POLICY_TP}" python - <<'PY'
+  POLICY_TP="${POLICY_TP}" \
+  DFLASH_DRAFT_MODEL="${DFLASH_DRAFT_MODEL}" \
+  DFLASH_NUM_SPECULATIVE_TOKENS="${DFLASH_NUM_SPECULATIVE_TOKENS}" \
+  python - <<'PY'
 import json
 import os
 
 tp = int(os.environ["POLICY_TP"])
+draft_model = os.environ.get("DFLASH_DRAFT_MODEL", "").strip()
 extra = {
     "kv_cache_dtype": "fp8",
     "block_size": 256,
@@ -393,9 +402,21 @@ extra = {
 }
 if tp > 2:
     extra["disable_custom_all_reduce"] = True
+if draft_model:
+    extra["speculative_config"] = {
+        "method": "dflash",
+        "model": draft_model,
+        "num_speculative_tokens": int(os.environ["DFLASH_NUM_SPECULATIVE_TOKENS"]),
+        "draft_tensor_parallel_size": 1,
+    }
 print(json.dumps(extra, separators=(",", ":")))
 PY
 )"
+if [[ -n "${DFLASH_DRAFT_MODEL}" ]]; then
+  echo "[prime-opd-3node] policy DFlash enabled draft_model=${DFLASH_DRAFT_MODEL} num_speculative_tokens=${DFLASH_NUM_SPECULATIVE_TOKENS}"
+else
+  echo "[prime-opd-3node] policy DFlash disabled; set PRIME_DFLASH_DRAFT_MODEL to enable"
+fi
 POLICY_GPU_IDS_DEFAULT=""
 for ((gpu_idx = 0; gpu_idx < POLICY_GPU_COUNT; gpu_idx++)); do
   if [[ -n "${POLICY_GPU_IDS_DEFAULT}" ]]; then
