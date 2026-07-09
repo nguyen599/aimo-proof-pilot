@@ -459,8 +459,15 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
                 {
                     "distill_mode": args.prime_opd_distill_mode,
                     "teacher_hidden_dtype": args.prime_opd_full_vocab_teacher_hidden_dtype,
+                    "teacher_hidden_transport": args.prime_opd_full_vocab_hidden_transport,
                 }
             )
+            if args.prime_opd_full_vocab_hidden_transport == "filesystem":
+                if not args.prime_opd_full_vocab_hidden_path:
+                    raise ValueError(
+                        "--prime_opd_full_vocab_hidden_path is required when filesystem hidden transport is enabled"
+                    )
+                orchestrator_algo["teacher_hidden_path"] = args.prime_opd_full_vocab_hidden_path
             trainer_full_vocab_distill = {
                 "enabled": True,
                 "teacher_lm_head_path": args.prime_opd_full_vocab_teacher_lm_head_path
@@ -1232,7 +1239,21 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     )
     parser.add_argument("--prime_opd_full_vocab_teacher_lm_head_path", default=None)
     parser.add_argument("--prime_opd_full_vocab_teacher_lm_head_key", default=None)
-    parser.add_argument("--prime_opd_full_vocab_teacher_hidden_dtype", default="float16", choices=("float16", "bfloat16", "float32"))
+    parser.add_argument("--prime_opd_full_vocab_teacher_hidden_dtype", default="bfloat16", choices=("float16", "bfloat16", "float32"))
+    parser.add_argument(
+        "--prime_opd_full_vocab_hidden_transport",
+        default="inline",
+        choices=("inline", "filesystem"),
+        help=(
+            "Transport for full-vocab teacher hidden states. filesystem writes on the teacher and sends "
+            "only shared-filesystem references through the orchestrator/packer."
+        ),
+    )
+    parser.add_argument(
+        "--prime_opd_full_vocab_hidden_path",
+        default=None,
+        help="Absolute shared directory visible to teacher, orchestrator, packer, and trainer.",
+    )
     parser.add_argument("--prime_opd_full_vocab_token_chunk_size", type=int, default=64)
     parser.add_argument("--prime_opd_full_vocab_vocab_chunk_size", type=int, default=8192)
     parser.add_argument("--with_tracking", action="store_true")
