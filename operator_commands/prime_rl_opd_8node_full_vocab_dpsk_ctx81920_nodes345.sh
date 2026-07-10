@@ -153,6 +153,7 @@ export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-olmo3-prime-rl-full-vocab}"
 export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENCY:-1}"
+export PRIME_RL_DETERMINISTIC_DP_WORKER_PORTS="${PRIME_RL_DETERMINISTIC_DP_WORKER_PORTS:-1}"
 # GitHub DNS can be flaky on the NII nodes. Runtime repo fetches and Prime-RL
 # submodule setup are retryable, so keep the window long enough for transient
 # resolver outages without requiring a manual resubmit.
