@@ -1,0 +1,274 @@
+id,problem,answer
+open-rl-combinatorics-247678,"Let $G$ be a graph with vertex set $V(G)$.
+Fix an integer $k \ge 1$. A subset $S \subseteq V(G)$ is said to be a $k$-tuple total dominating set if every vertex $v \in V(G)$ has at least $k$ neighbors belonging to $S$, that is,
+\[
+|N(v)\cap S| \ge k \quad \text{for all } v \in V(G).
+\]
+The smallest possible size of such a set is called the $k$-tuple total domination number of $G$ and is denoted by $\gamma_{\times k,t}(G)$.
+For each integer $n \ge 2$, let $P_n$ denote the path on $n$ vertices and let $C_n$ denote the cycle on $n$ vertices.  The Cartesian product of graphs is denoted by $\square$.
+Consider the following three Cartesian products:
+\[
+E_1 = P_3 \square P_{902}, \qquad
+E_2 = C_{512} \square C_{333}, \qquad
+E_3 = P_3 \square P_{451}.
+\]
+Form the weighted sum
+\[
+\mathcal{W}=
+3\,\gamma_{\times 2,t}(E_1)+
+\gamma_{\times 2,t}(E_2)-
+2\,\gamma_{\times 2,t}(E_3).
+\]
+What is the remainder when $\mathcal{W}$ is divided by 8676?",2100
+imo-bench-algebra-030,"There exists an infinite sequence $x_1, x_2, \ldots$ where each term belongs to $[0, 777]$ such that for all positive integers $m < n$, we have $$(m+n)|x_n^2 - x_m^2| \ge D.$$
+Let D denote the maximum value satisfying this condition. What is the remainder when D is divided by 99991?
+",3783
+imo-bench-algebra-032,"We call $g: \mathbb{R} \rightarrow \mathbb{R}$ a good function if $g$ satisfies all the following conditions:
+
+(1) For any two distinct real numbers $a, b$, if $g(ab) = 0$, then $g(a) = 0$ or $g(b) = 0$.
+(2) For any two distinct real numbers $a, b$, if $g(ab) \neq 0$, then $$\frac{g(a)-g(b)}{a-b}=\frac{g(a)g(b)}{g(ab)}.$$
+(3) $g(1)=1$
+\\
+Let $S=\{2^a 3^b 5^c 7^d : a,b,c,d\in \mathbb{Z}\}$ and we call $h:S\rightarrow \mathbb{R}$ an essential function if there exists a good function $g$ such that $h(x)=g(x)$ for all $x\in S$. Find the number of essential functions. ",16
+hmmt-feb-2026-combinatorics-p20,"Let \(S\) be the set of all ordered pairs \((x, y)\) of nonnegative integers \(0 \leq x \leq 19\) and \(0 \leq y \leq 2\). Compute the number of permutations \((x_1, y_1)\), \((x_2, y_2)\), ..., \((x_{60}, y_{60})\) of the elements of \(S\) such that
+
+- \(y_1 = 2\) and \(y_{60} = 0\);
+- for all nonnegative integers \(1 \leq i \leq 59\), exactly one of the following holds:
+- \(x_i = x_{i+1}\) and \(|y_i - y_{i+1}| = 1\),
+- \(y_i = y_{i+1}\) and \(x_i - x_{i+1}\) is \(-1\) or \(19\).",20460
+imo-bench-algebra-055,"Consider a sequence of positive integers $x_1, x_2, \ldots$ satisfying the following condition:
+\[
+    (x_{2n + d} - x_{n + d} - n)(x_{2n + d} - x_n - n - d) = 0
+\]
+for all integers $n \ge 32$ and $d \ge 1024$. Find the value of the largest possible positive integer $n$ for which $x_{n + 1} - x_n \neq 1$.",2079
+imo-bench-algebra-080,"Suppose that the polynomials $f(x)$ and $g(x)$ with integer coefficients satisfy the following conditions:
+
+[Condition 1] Define integer sequences $(a_n)_{n \ge 1}$ and $(b_n)_{n \ge 1}$ by $a_1 = 2024$ and
+\[
+    b_n = f(a_n), \quad a_{n+1} = g(b_n)
+\]
+for $n \ge 1$. Then for any positive integer $k$, there exists some non-zero term of $(a_n)$ or $(b_n)$ that is divisible by $k$.
+
+[Condition 2] $2025\le f(0), g(0) \le 10000$.
+
+Find the maximum possible value of $f(0)-g(0)$",3988
+open-rl-number_theory-248243,"Consider the real constant
+\[
+H=\sum_{n=1}^{\infty}\frac{H_n^5}{n^2}
+\;+\;
+\sum_{n=1}^{\infty}\frac{H_n\bigl(H_n^{(2)}\bigr)^2}{n^2},
+\]
+where for each integer \(m\ge 1\) the \(n\)-th generalized harmonic number is
+\[
+H_n^{(m)}:=\sum_{k=1}^{n}\frac{1}{k^{m}},
+\qquad
+H_n:=H_n^{(1)}.
+\]
+If \(H\) is expressed in closed form as a finite \(\mathbb{Q}\)-linear combination of products of Riemann zeta values
+\(\zeta(s)\), let $k$ be the sum of these rational coefficients. What is the remainder when $2024k$ is divided by 8181?",3427
+imo-bench-combinatorics-005,"Consider natural numbers whose decimal representations use only the digits from the set {2, 0, 1, 8}, have at most 16 digits, and are divisible by 3. Let C denote the number of such natural numbers. What is the remainder when C is divided by 10000?",5765
+imo-2025-problem-3-number_theory,A function $f \colon \NN \to \NN$ is said to be \emph{bonza} if \[ f(a)\quad\text{divides}\quad b^a-f(b)^{f(a)} \] for all positive integers $a$ and $b$. Determine the smallest real constant $c$ such that $f(n) \leq cn$ for all bonza functions $f$ and all positive integers $n$.,4
+imo-bench-combinatorics-014,"In a board of $125 \times 125$ grids, we pick $k$ unit squares such that every picked square shares vertices with at most $1$ other picked square. Some squares are colored red and some squares are colored blue, where red squares and blue squares satisfy the following condition: any two squares of the same color do not share a side or a vertex. Determine the maximum of $k$.",5292
+imo-bench-combinatorics-029,"We call a rectangle of the size $1 \times 2$ a domino. Rectangle of the $2 \times 3$ removing two opposite (under center of rectangle) corners we call S-tetramino. These figures can be rotated. A rectangle of the size $2 \times 4$ removing two opposite (under center of rectangle) corners we call L-hexamino. These figures can be rotated.
+
+It requires to tile rectangle of size $1008  \times 1010$ by using dominoes and S-tetraminoes. What is the minimal number of dominoes should be used?",506
+imo-bench-combinatorics-030,"A cube with size $18 \times 18 \times 18$ consists of $5832$ unit cubes, all colored white. Anton and Berta play a game on this cube. Anton chooses some pillars with size $1\times 1\times 18$ such that no two pillars share a vertex or side, and turns all chosen unit cubes to black. Berta is allowed to choose some unit cubes and ask Anton their colors. In addition, Anton also tells Berta that he painted at least two pillars. How many unit cubes, at least, that Berta need to choose so that for any answer from Anton, Berta can always determine the black unit cubes?",486
+imo-bench-combinatorics-032,"A classroom contains 68 pairs of nonzero integers. Suppose that for each positive integer $k$ at most one of the pairs $(k, k)$ and $(-k, -k)$ is written on the classroom board.  A student erases some of the 136 integers, subject to the condition that no two erased integers may add to 0. The student then scores one point for each of the 68 pairs in which at least one integer is erased. Additionally, the classroom has another broken whiteboard, and some integers might be invisible. Determine, with proof, the largest number $N$ of points that the student can guarantee to score regardless of which 68 pairs have been written on the board.",43
+EGMO-2024-p6-combinatorics,"How many positive integers $d$ for which there exists a degree $d$ polynomial $P$ with real coefficients such that there are at most $d$ different values among
+\[
+P(0), P(1), \ldots, P(d^2 - d).
+\]",3
+imo-bench-combinatorics-049,"In a research lab, scientists are studying the spread of a newly discovered bacteria on a $64 \times 64$ square petri dish. The dish is divided into small square sections, each of which is a $1 \times 1$ square and is either infected (black) or sterile (white). Initially, there are exactly $k$ infected sections, and the rest are sterile. Scientists observe that the bacteria spread according to two specific growth rules:
+
+1) If a $2 \times 2$ square section has exactly three infected sections, the last sterile section gets infected.
+2) If a $2 \times 2$ square has exactly two infected sections, the infection mutates—infected sections become sterile, and sterile sections become infected.
+The researchers want to determine the smallest number of initially infected sections, $k$, such that no matter how the infection starts, it will always be possible to spread the bacteria to the entire dish after a sequence of growth and mutation cycles.
+
+What is the smallest such $k$ that guarantees a full infection?",1057
+imo-bench-combinatorics-055,"On a large chessboard of $2011$ by $2011$ squares, a finite number of square tiles are placed. Each tile covers a square area of $52$ by $52$ cells. In each cell, the number of tiles covering it is written, and among all nonzero values written on the board, let $k$ denote the maximum possible number of cells containing the same value, considering all possible tile configurations. What is the remainder when $k$ is divided by 99991?",86773
+imo-bench-combinatorics-061,"A sequence of positive integers $a_1, a_2, \ldots, a_n$ is called a Korean sequence if it satisfies the following conditions:
+\begin{itemize}
+    \item $a_1 < a_2 < \ldots < a_n$
+    \item For each $1 \leq k < n$, we define two sets $A_k = \{a_1, a_2, \ldots, a_k\}$ and $B_k = \{a_{k+1}, a_{k+2}, \ldots, a_n\}$. A partition $(A_k, B_k)$ is called good if the least common multiple of the elements in $A_k$ is equal to the greatest common divisor of the elements in $B_k$.
+\end{itemize}
+Determine the minimum value of $n$ such that there exists a Korean sequence of length $n$ with exactly 2015 good partitions.",3024
+usemo-2024-combinatorics,"There are 1001 stacks of coins $S_{1},S_{2},\ldots,S_{1001}$ .Initially, stack $S_{k}$ has k coins for each $k=1,2,\ldots,1001$ . In an operation, one selects an ordered pair $(i,j)$ of indices i and j satisfying $1\leq i<j\leq1001$ . subject to two conditions:
+
+- The stacks $S_{i}$ and $S_{j}$ must each have at least one coin.
+
+- The ordered pair $(i,j)$ must not have been selected in any previous operation.
+
+Then, if $S_{i}$ and $S_{j}$ have a coins and b coins, respectively, one removes $\operatorname*{g c d}(a,b)$ coins from each stack.
+
+Let $N$ denote the maximum possible number of times this operation can be performed.
+
+What is the remainder when $N$ is divided by 77789?",17133
+imo-bench-combinatorics-073,"In a grand theater, there are $40000$ seats arranged into $200$ rows, each row has $200$ seats to form a $200 \times 200$ seating arrangement. Out of these seats, some seats are reserved and others remain available. The theater organizers want to assign reserved seats following these two strict conditions:
+
+1) No two reserved seats can be in rows that have the same number of reserved seats while also being in columns that have the same number of reserved seats.
+2) There must be two rows that each contain exactly $m$ reserved seats.
+
+What is the largest possible value of $m$ for which such a seating assignment can be created?
+
+",96
+usa-tstst-2024-combinatorics-p9,"Let $n\geq2$ be a fixed integer. The cells of an $n\times n$ table are filled with the integers from 1 to $n^{2}$ with each number appearing exactly once. Let N be the number of unordered quadruples of cells on this board which form an axis-aligned rectangle,with the two smaller integers being on opposite vertices of this rectangle. Find the largest possible value of $N$ when $n = 17$.",6936
+imo-bench-combinatorics-076,"The Lucas numbers $L_{0}, L_{1}, L_{2}, \ldots$ are defined inductively by $L_{0}=2, L_{1}=1$, and $L_{n+1}=L_{n}+L_{n-1}$ for $n \geqslant 1$. The Fibonacci numbers $F_{0}, F_{1}, F_{2}, \ldots$ are defined inductively by $F_{0}=0, F_{1}=1$, and $F_{n+1}=F_{n}+F_{n-1}$ for $n \geqslant 1$. Determine the smallest size of a set $S$ of integers such that for every $k=2,3, \ldots, 125$ there exist some $x, y \in S$ such that $x-y=F_{k}$. Also, there exist some $a, b \in T$ for some set $T$ such that $a-b = L_{100}$.",64
+cmo-2025-p3-combinatorics,"Let $n$ be a positive integer. There are $n$ red cards and $n$ blue cards. Initially, each red card has a real number $0$ written on it, and each blue card has a real number $1$ written on it.
+
+One operation is as follows:
+Select one red card and one blue card whose numbers satisfy
+$
+(\text{real number x on red}) < (\text{real number y on blue}),
+$
+replace these two numbers with their average
+$\frac{x + y}{2}$
+and write that average on $both$ cards.
+
+Find the smallest positive integer $n$ such that, after performing a finite number of legal operations, the sum of the numbers on all $n$ red cards can be made greater than 100.",106
+imo-bench-combinatorics-084,"Minh is a student whose birthday is in the year $1997$, so he starts by writing $s$ integer-valued 1997-tuples on a blackboard. After doing that, he can take any two (not necessarily distinct) tuples $\mathbf{v}=\left(v_{1}, \ldots, v_{1997}\right)$ and $\mathbf{w}=\left(w_{1}, \ldots, w_{1997}\right)$ that he has already written, and apply one of the following operations to obtain a new tuple:
+
+\[
+\begin{aligned}
+& \mathbf{v}+\mathbf{w}=\left(v_{1}+w_{1}, \ldots, v_{1997}+w_{1997}\right) \\
+& \mathbf{v} \vee \mathbf{w}=\left(\max \left(v_{1}, w_{1}\right), \ldots, \max \left(v_{1997}, w_{1997}\right)\right)
+\end{aligned}
+\]
+
+and then write this tuple on the blackboard.
+
+It turns out that, in this way, Minh can write any integer-valued 2023-tuple on the blackboard after finitely many steps. What is the smallest possible number $s$ of tuples that he initially wrote?",3
+Open-rl-special-function-246644,"Given: \(I=\int_0^\infty\frac{\sqrt x\log(\log(x))}{(-1+x)^2(1+x)}\,dx \)
+
+The closed form of \(I\)  is of the form \(\displaystyle\frac{A}{B}\left(-\log (C)+ \pi \log \left(-\frac{(1+i )\sqrt{\frac{H}{\pi}}\, \Gamma(\frac{D}{E})}{ \Gamma(-\frac{F}{G})}\right)\right)\), where \(\Gamma\) denotes the Gamma function and \(A,B,C,D,E,F,G,H \in \mathbb{N}\).
+
+
+Find the value of \(A+2B+C+2D+3E+2F+G+2H\).",31
+imo-bench-combinatorics-090,"A polyomino is a figure which consists of unit squares joined together by their sides. (A polyomino may contain holes.) Consider a grid of unit square cells which extends to infinity in all directions. Find the greatest positive integer $C$ which satisfies the following condition: For every colouring of the cells of the grid in $36$ colours, there is some polyomino within the grid which contains at most $35$ colours and whose area is at least $C$.
+",2450
+imo-bench-combinatorics-093,"Let $s$ be positive integers such that $s<5625$. Initially, one cell out of an $n \times n$ grid is coloured green. On each turn, we pick some green cell $c$ and colour green some $s$ out of the $5625$ cells in the $75 \times 75$ square centred at $c$. No cell may be coloured green twice. We say that $s$ is sparse if there exists some positive number $C$ such that, for every positive integer $n$, the total number of green cells after any number of turns is always going to be at most $Cn$. Find the least sparse integer $s$.
+",4181
+imo-bench-combinatorics-097,"In a circular seating arrangement at a party, there are $16$ guests sitting at the table play a game. Each guest has a unique name tag crated by the game master, and then these name tags are randomly distributed among the guests. In each of the next $n$ rounds, the guests plays the game according to the following rule:
+
+i) Any guest who has their own name tag exits the table.
+ii) The remaining guests pass their name tags to the guest sitting immediately to their right.
+
+Let K denote the number of ways the name tags can be distributed such that there exists at least one guest who does not leave the table after 4 rounds. What is the remainder when K is divided by 100000?",38549
+usa-tstst-2023-geometry-Q8,"Let ABC be an equilateral triangle with side length 5. Points $A_{1}$ and $A_{2}$ are chosen on side BC, points $B_{1}$ and $B_{2}$ are chosen on side $C A$ , and points $C_{1}$ and $C_{2}$ are chosen on side AB such that $B A_{1}<B A_{2},\thinspace C B_{1}<C B_{2}$ ,and $A C_{1}<A C_{2}$ 
+
+Suppose that the three line segments $B_{1}C_{2},C_{1}A_{2}$ ,and $A_{1}B_{2}$ are concurrent, and the perimeters of triangles $A B_{2}C_{1},\;B C_{2}A_{1}$ , and $C A_{2}B_{1}$ are all equal. Find all possible values of this common perimeter.",5
+imo-bench-geometry-003,"Given a convex $n$-sided polygon $B_1\ldots B_n$. Let $Q_i$ ($i = 1,\ldots, n$) be points on the boundary of the polygon such that $B_iQ_i$ divides the area of the polygon in half.  Assume that none of the points $Q_i$ coincide with any vertex of the polygon and that these points lie on $k$ sides of the $n$-sided polygon. For a given value of $n$, determine the minimum possible value of $k$.
+",3
+pumac-2025-Q8-geometry,"Let $\triangle ABC$ be a triangle with $AC = 33$, $BC = 16$, $AB = 28$ and incenter $I$. 
+Let $U$ and $V$ be points on sides $AB$ and $AC$ respectively such that $AU = AV = 20$. 
+Let $P$ be the reflection of $B$ over $U$ and let $Q$ be the reflection of $C$ over $V$. 
+The circumcircles of triangles $BIP$ and $CIQ$ intersect at a point $S \ne I$. 
+Let $M$ be the midpoint of $BC$. Compute the value of $MS^2$.
+",1352
+imo-bench-geometry-044,"Given $PQRS$ is a parallelogram. We know that $\angle S = 60^\circ$, $PS = 2$ and $PQ = \sqrt{3} + 1$. Point $N$ is the midpoint of $PS$. Segment $RE$ is the angle bisector of $R$. Find the angle $REQ$ in terms of degree.
+",75
+imo-bench-geometry-090,"A convex polyhedron has $m$ faces that are all congruent triangles with angles $30^{\circ}, 75^{\circ}$, and $75^{\circ}$. Determine, with proof, the maximum possible value of $m$.
+",44
+imo-bench-number_theory-017,"$\alpha$ is a real number that is not rational, and $k$ is a positive integer. A pair of positive integers $(m, n)$ is called ""pretty"" if $m\lceil n\alpha \rceil - n \lfloor m\alpha \rfloor =k$. A pretty pair $(m, n)$ is called ""cool"" if neither $(m-n, n)$ nor $(m, n-m)$ are pretty pairs. Find the number of cool pairs when $k=2310$.
+",6912
+imo-bench-number_theory-021,"For a positive integer $n$, we call $g:\mathbb{Z}\rightarrow \mathbb{Z}$ a \textif{$n$-good function} if $g(1)=1$ and for any two distinct integers $a$ and $b$, $g(a)-g(b)$ divides $a^n -b^n$. We call a positive integer $n$ an \textit{exotic integer} if the number of $n$-good functions is twice of an odd integer. Find $132$th exotic integer.
+
+",69169
+imo-bench-number_theory-086,"Positive integers $M$ and $N$ satisfy the following conditions:
+
+(1) $M$ is a 1000-digit number, and none of its digits are 0.
+(2) The decimal expansion of $\left \lfloor \frac{M}{N} \right\rfloor$ contains the digit 0 exactly $A$ times. (The leading digit of the decimal expansion is not 0.)
+
+Find the maximum possible value of $A$.
+",939
+imo-bench-number_theory-022,"For a given positive integer $n$, let $m$ be the exponent of 2 in the prime factorization of $n$. Define $f(n) = \frac{n}{2^m}$. Find the sum of all positive integers $u$ for which there exists a positive integer $v$ such that
+
+(Condition) $f(u+v) - f(u), f(u+v+1) - f(u+1), \cdots, f(u+2v-1) - f(u+v-1)$ are all multiples of 4.",9
+imo-bench-number_theory-016,"How many functions $g:\mathbb{Q}\rightarrow \mathbb{Z}$ satisfy the following condition for any rational number $x$, integer $a$, and positive integer $b$:
+$g(x)=g\left(\frac{g(bx-a)+a}{b}\right)$",3
+imo-bench-algebra-017,"A real coefficient polynomial $f(x)$ satisfies the condition that for all real numbers $a$ and $b$, $|a^2 - 2f(b)| \\le 2|b|$ if and only if $|b^2 - 2f(a)| \\le 2|a|$. Let $k$ denote the largest possible value of $f(0)$. What is the remainder when $2^{128k}$ is divided by $81818$?",13204
+imo-bench-algebra-024,"A function $C$ from the set of positive integers to itself is called ""nice"" if for all positive integers $a, b$, $C(a+b) - C(a) - C(C(b)) + 1 \ge 0$. Find the number of possible values of $C(1234)$ for a nice function $C: \mathbb{N} \rightarrow \mathbb{N}$.",1235
+imo-bench-geometry-073,"A non-equilateral triangle $XYZ$ is inscribed in a circle $\Omega$ with centre $P$, radius $R$ and its incircle has centre $Q$ and touches $YZ,ZX,XY $ at $L,M,N$, respectively. A circle with centre $Q$ and radius $\rho$ intersects the rays $[QL),[QM),[QN)$ at $X',Y',Z'$. Given that $\rho = 2$ and $R =8$, compute the value of $\dfrac{QP}{QK}$ where $K$ is the orthocenter of $X'Y'Z'$.",4
+imo-bench-algebra-018,"Let $a_0, a_1, \ldots$ be a sequence of non-negative integers. Suppose that for all non-negative integers $p$,
+$$a_{a_{a_p}} = a_{p+1} + 1.$$\nFind the sum of all possible values of $a_{2025}$.",4056
+imo-bench-algebra-066,"A sequence of integers $a_0, \ldots, a_{1000}$ is called a \textit{good sequence} if there exists a sequence of integers $b_0, \ldots, b_{1000}$ such that \[ \prod_{k=0}^{1000} (x - a_k) = \prod_{k=0}^{1000} (x - k)^{b_k}, \quad \prod_{k=0}^{1000} (x - b_k) = \prod_{k=0}^{1000} (x - k)^{a_k} \] for all $x$. Let $C$ denote the sum $\sum_{i=0}^{1000} (i+1)a_i^2$ taken over all good sequences $a_0, \ldots, a_{1000}$. What is the remainder when $C$ is divided by 100000?",87052
+imo-bench-algebra-027,"A function $g:\mathbb{R}\to\mathbb{R}$ is called a \textit{good function} if $g$ satisfies
+\[
+4g\left(x^{2}+y^{2}+2g(xy)\right)=(g(2x+2y))^{2}
+\]
+for all pairs of real numbers $x$ and $y$. For a real number $r$, we say that $t\in \mathbb{R}$ is a \textit{$r$-represented number} if there exists a good function $g$ such that $t=g(r)$. Find the number of connected components of the set of all $r$ such that there are four $r$-represented number.",2
+stm-2025-p10-geometry,"Let $AFDC$ be a rectangle. Construct points $E$ and $B$ outside of $AFDC$ such that 
+\[
+AB = BC = DE = EF = 45
+\]
+and $ABCDEF$ is a convex hexagon. Let $\mathcal{E}$ be an inscribed ellipse tangent to sides 
+$AB, BC, CD, DE, EF, FA$ at points $U, V, W, X, Y,$ and $Z$, respectively. 
+
+Points $F_1$ and $F_2$, with $F_1$ closer to $B$, are the foci of $\mathcal{E}$ satisfying
+\[
+\triangle ABC \cong \triangle F_1WF_2 \cong \triangle DEF.
+\]
+
+Let $Q$ be on line $CD$ such that $F_1Y \perp ZQ$. Let the area of quadrilateral $F_1QYZ$ is $S$. What is the remainder when $S^2$ is divided by $3^7$?
+",2500
+imo-bench-number_theory-031,"Let $k>l$ be given coprime positive integers greater than 1. Define a function $f: \mathbb{Z}\rightarrow \mathbb{Z}$ as follows: for $x$, $f(x)$ is the smallest value of $|a|+|b|$ among all integers $a,b$ satisfying $ka+lb = x$.
+ An integer $x$ is called 'nice' if $f(x)\geq \max (f(x-a),f(x+a),f(x-b),f(x+b))$. Denote by $F(k,l)$ the the number of nice integers when both $k$ and $l$ are odd, and denote by $G(k,l)$ the number of nice integers when either $k$ or $l$ is even. Suppose that there exists polynomials $p(k,l)$ and $q(k,l)$ such that $F(k,l)=p(k,l)$ for all odd integers $k,l$ and $G(k,l)=q(k,l)$ whenever at least one of $k$ or $l$ is even.  Evaluate $p(3,5)^2 + q(3,5)^2$.",80
+putnam-2025-p6b-algebra,"Let $\mathbb{N} = \{1,2,3,\ldots\}$. If $r$ is the largest real constant such that there exists a function
+\[
+g : \mathbb{N} \to \mathbb{N}
+\]
+such that
+\[
+g(n+1) - g(n) \ge \bigl(g(g(n))\bigr)^r
+\]
+for all $n \in \mathbb{N}$. Determine the value of $2024r$.
+",506
+Project-euler-572,"A matrix $M$ is called idempotent if $M^2 = M$.
+
+Let $M$ be a three by three matrix:
+\[M=\begin{pmatrix}
+a & b & c\\
+d & e & f\\
+g & h & i\\
+\end{pmatrix}.\]
+
+Let $C(n)$ be the number of idempotent three-by-three matrices $M$ with integer elements satisfying
+$$-n \le a,b,c,d,e,f,g,h,i \le n.$$
+It is known that $C(1)=164$ and $C(2)=848$.
+
+Let $N$ denote $C(200)$.
+
+What is the remainder when $N$ is divided by 99997?",38247
+project-euler-260,"A game is played with three piles of stones and two players.
+
+On each player's turn, the player may remove one or more stones from the piles. However, if the player takes stones from more than one pile, then the same number of stones must be removed from each of the selected piles.
+
+In other words, the player chooses some $N > 0$ and removes:
+
+- $N$ stones from any single pile; or
+
+- $N$ stones from each of any two piles ($2N$ total); or
+
+- $N$ stones from each of the three piles ($3N$ total).
+
+The player taking the last stone(s) wins the game.
+
+A winning configuration is one where the first player can force a win.
+
+For example, $(0,0,13)$, $(0,11,11)$, and $(5,5,5)$ are winning configurations because the first player can immediately remove all stones.
+
+A losing configuration is one where the second player can force a win, no matter what the first player does.
+
+For example, $(0,1,2)$ and $(1,3,3)$ are losing configurations: any legal move leaves a winning configuration for the second player.
+
+Consider all losing configurations $(x_i, y_i, z_i)$ where $x_i \le y_i \le z_i \le 100$.
+
+We can verify that $\sum (x_i + y_i + z_i) = 173895$ for these.
+
+Let $S$ denote $\displaystyle\sum (x_i + y_i + z_i)$ where $(x_i, y_i, z_i)$ ranges over the losing configurations with $x_i \le y_i \le z_i \le 1000$.
+
+What is the remainder when $S$ is divided by 99981?",73882
+MIT-math-Q2,"Each monk entering the Temple of Forever is given a bowl with 15 red beads and 12 green beads. Each time the Gong of Time rings, a monk must do one of two things: 
+1. Exchange: If he has at least 3 red beads in his bowl, then he may exchange 3 red beads for 2 green beads. 
+2. Swap: He may replace each green bead in his bowl with a red bead and replace each red bead in his bowl with a green bead. 
+That is, if he starts with i red beads and j green beads, then after he performs this operation, he will have j red beads and i green beads. A monk may leave the Temple of Forever only when he has exactly 5 red beads and 5 green beads in his bowl. Inside the Temple of Forever, the Gong of Time rings on. As you may well imagine,the monks begin to recognize that no matter how many ways they try to exchange or swap their beads, they always seem to end up in some state they've already been in before! For one or two monks, this realization is all they need to propel them instantly into a state of enlightenment. For the overwhelming majority, however, this knowledge does nothing but weaken their resolve. They just get depressed. Taking note of the mental state of this second group, the Keeper of the Temple makes an unannounced appearance and proclaims to the group, ""From now on, any monk who is able to visit 108 (108 being the mystical number that encompasses all of existence) unique states will be allowed to leave the Temple of Forever."" What is the true maximal number of unique states a monk can visit in any execution of the Temple of Forever machine?",52
+EGMO-2016,"Let $m$ be a positive integer. Consider a $4m \times 4m$ array of square unit cells. Two different cells are related to each other if they are in either the same row or in the same column. No cell is related to itself. Some cells are colored blue, such that every cell is related to at least two blue cells. Let $k$ denote the minimum possible number of blue cells. What is the remainder when $(4)^{k}$ is divided by 77795?",4096
