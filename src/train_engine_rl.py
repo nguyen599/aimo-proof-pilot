@@ -985,10 +985,26 @@ def run_prime_inference_component(args: argparse.Namespace, log_dir: Path, compo
         env["CUDA_VISIBLE_DEVICES"] = gpu_ids
         log(f"Starting {label} inference on GPU(s) {gpu_ids}")
     command = [*command_prefix, "@", str(config_path)]
+    max_restarts = (
+        max(0, int(os.environ.get("PRIME_RL_TEACHER_INFERENCE_MAX_RESTARTS", "3")))
+        if component == "teacher_inference"
+        else 0
+    )
+    restart_delay_s = max(0.0, float(os.environ.get("PRIME_RL_TEACHER_INFERENCE_RESTART_DELAY_SECONDS", "10")))
     start = time.monotonic()
-    return_code = run_logged_subprocess(command, env, log_path=inference_dir / f"{label}_inference.log")
-    log(f"Prime-RL {label} inference exit status: {return_code} duration_s={time.monotonic() - start:.1f}")
-    return return_code
+    restart_count = 0
+    while True:
+        return_code = run_logged_subprocess(command, env, log_path=inference_dir / f"{label}_inference.log")
+        duration_s = time.monotonic() - start
+        log(f"Prime-RL {label} inference exit status: {return_code} duration_s={duration_s:.1f}")
+        if return_code == 0 or restart_count >= max_restarts:
+            return return_code
+        restart_count += 1
+        log(
+            f"Restarting Prime-RL {label} inference after nonzero exit "
+            f"restart={restart_count}/{max_restarts} delay_s={restart_delay_s:g}"
+        )
+        time.sleep(restart_delay_s)
 
 
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
