@@ -6,8 +6,7 @@ set -euo pipefail
 #   Node 0: trainer + orchestrator, 8 GPUs
 #   Nodes 1,2,3,4,5,6: student/policy vLLM rollout, 8 GPUs each
 #   Node 7: DeepSeek-V4-Flash teacher vLLM hidden-state scorer, 8 GPUs
-# Requires Prime-RL df825e5c or newer for synchronized filesystem hidden-state
-# cleanup across trainer ranks.
+# Requires Prime-RL's independent per-rank filesystem-reference padding fix.
 #
 # To restore older layouts, set PRIME_NODE_LAYOUT=6node or PRIME_NODE_LAYOUT=3node:
 #   6node: node 0 trainer, nodes 1,2,3,4 policy, node 5 teacher.
