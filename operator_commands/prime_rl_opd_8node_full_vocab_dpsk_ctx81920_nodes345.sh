@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # To restore older layouts, set PRIME_NODE_LAYOUT=6node or PRIME_NODE_LAYOUT=3node:
 #   6node: node 0 trainer, nodes 1,2,3,4 policy, node 5 teacher.
-#   Node 3: trainer, node 4: policy, node 5: teacher.
+#   Node 0: trainer, node 1: policy, node 2: teacher.
 # The explicit PRIME_TRAIN_NODE, PRIME_POLICY_NODES, and PRIME_TEACHER_NODE
 # variables override both layouts.
 
@@ -19,9 +19,9 @@ NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
 
 case "${PRIME_NODE_LAYOUT:-8node}" in
   3node|345)
-    DEFAULT_TRAIN_NODE="3"
-    DEFAULT_POLICY_NODES="4"
-    DEFAULT_TEACHER_NODE="5"
+    DEFAULT_TRAIN_NODE="0"
+    DEFAULT_POLICY_NODES="1"
+    DEFAULT_TEACHER_NODE="2"
     ;;
   6node|full)
     DEFAULT_TRAIN_NODE="0"
@@ -380,11 +380,16 @@ if (( TEACHER_BATCHED_TOKENS < VLLM_CTX_LEN )); then
 fi
 MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
-GROUP_SIZE="${PRIME_GROUP_SIZE:-1}"
+GROUP_SIZE="${PRIME_GROUP_SIZE:-8}"
+CANDIDATE_CONTINUE_COUNT="${PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4}"
+PACKED_SEQUENCES_PER_STEP="${PRIME_PACKED_SEQUENCES_PER_STEP:-64}"
+TOKEN_BATCH_SIZE=$((CTX_LEN * PACKED_SEQUENCES_PER_STEP))
 INFLIGHT_PER_POLICY_NODE="${PRIME_OPD_INFLIGHT_ROLLOUTS_PER_POLICY_NODE:-48}"
 DEFAULT_MAX_INFLIGHT=$((INFLIGHT_PER_POLICY_NODE * POLICY_NODE_COUNT))
 MAX_INFLIGHT="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-${DEFAULT_MAX_INFLIGHT}}"
 echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (${INFLIGHT_PER_POLICY_NODE}/policy_node; override PRIME_OPD_MAX_INFLIGHT_ROLLOUTS)"
+echo "[prime-opd-3node] candidate_gate group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT} proof_only=$((GROUP_SIZE - CANDIDATE_CONTINUE_COUNT))"
+echo "[prime-opd-3node] full-environment batching token_batch_size=${TOKEN_BATCH_SIZE} (${PACKED_SEQUENCES_PER_STEP} packed sequences x seq_len ${CTX_LEN})"
 MAX_OFF_POLICY="${PRIME_MAX_OFF_POLICY_STEPS:-24}"
 POLICY_TP="${PRIME_VLLM_TP:-1}"
 POLICY_DP="${PRIME_VLLM_DP:-8}"
@@ -528,6 +533,8 @@ COMMON_ARGS=(
   --prime_proof_num_verifiers "${PRIME_PROOF_NUM_VERIFIERS:-4}"
   --prime_proof_refine_rounds "${PRIME_PROOF_REFINE_ROUNDS:-0}"
   --prime_proof_refine_review_n "${PRIME_PROOF_REFINE_REVIEW_N:-2}"
+  --prime_proof_candidate_gate true
+  --prime_proof_candidate_continue_count "${CANDIDATE_CONTINUE_COUNT}"
   --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}"
   --prime_eval_interval "${PRIME_OPD_EVAL_INTERVAL:-50}"
   --prime_eval_num_examples "${PRIME_OPD_EVAL_NUM_EXAMPLES:-8}"
@@ -539,6 +546,7 @@ COMMON_ARGS=(
   --prime_eval_answer_column auto
   --prime_batch_size "${BATCH_SIZE}"
   --prime_group_size "${GROUP_SIZE}"
+  --prime_packed_sequences_per_step "${PACKED_SEQUENCES_PER_STEP}"
   --prime_max_inflight_rollouts "${MAX_INFLIGHT}"
   --prime_max_off_policy_steps "${MAX_OFF_POLICY}"
   --prime_gpus_per_node 8

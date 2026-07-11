@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import random
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +52,7 @@ SELECTED_ID_PATTERN = re.compile(
     re.IGNORECASE,
 )
 DEFAULT_MIX_SEED = 34521
+CANDIDATE_LOGPROB_FLOOR = -1e30
 VERIFIABLE_ANSWER_MATCH_METHOD_IDS = {
     "missing_prediction": 0.0,
     "missing_gold": 0.0,
@@ -974,6 +977,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         refine_early_stop_reward: float = 0.95,
         selector_top_k: int = 3,
         require_closed_think: bool | str = True,
+        candidate_gate_enabled: bool | str = False,
+        candidate_continue_count: int = 4,
         **kwargs: Any,
     ) -> None:
         self.refine_rounds = max(0, int(refine_rounds))
@@ -984,8 +989,67 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         self.refine_early_stop_reward = clamp01(float(refine_early_stop_reward))
         self.selector_top_k = max(1, int(selector_top_k))
         self.require_closed_think = parse_bool(require_closed_think, True)
+        self.candidate_gate_enabled = parse_bool(candidate_gate_enabled, False)
+        self.candidate_continue_count = max(1, int(candidate_continue_count))
+        self._candidate_gate_groups: dict[str, dict[str, Any]] = {}
         turns_per_round = 1 + self.num_verifiers * (2 if self.enable_meta_verification else 1)
         super().__init__(max_turns=turns_per_round * (self.refine_rounds + 1) + 2, **kwargs)
+
+    @property
+    def requires_group_rollouts(self) -> bool:
+        return self.candidate_gate_enabled or super().requires_group_rollouts
+
+    async def _run_group_states(
+        self,
+        group_inputs: list[Any],
+        client: Any,
+        model: str,
+        sampling_args: Any,
+    ) -> list[Any]:
+        if not self.candidate_gate_enabled or len(group_inputs) <= 1:
+            return await super()._run_group_states(group_inputs, client, model, sampling_args)
+
+        group_id = uuid.uuid4().hex
+        group = {
+            "condition": asyncio.Condition(),
+            "expected": len(group_inputs),
+            "continue_count": min(self.candidate_continue_count, len(group_inputs)),
+            "records": {},
+            "selected": None,
+            "ranks": {},
+        }
+        self._candidate_gate_groups[group_id] = group
+        prepared_inputs: list[Any] = []
+        for candidate_index, raw_input in enumerate(group_inputs):
+            candidate_input = dict(raw_input)
+            info = dict(json_loads_maybe(candidate_input.get("info")) or {})
+            info.update(
+                {
+                    "candidate_gate_enabled": True,
+                    "candidate_group_id": group_id,
+                    "candidate_group_size": len(group_inputs),
+                    "candidate_index": candidate_index,
+                    "candidate_continue_count": group["continue_count"],
+                }
+            )
+            candidate_input["info"] = info
+            prepared_inputs.append(candidate_input)
+
+        LOGGER.info(
+            "Proof-OPD candidate group started: group=%s candidates=%d continue=%d",
+            group_id,
+            len(group_inputs),
+            group["continue_count"],
+        )
+        try:
+            return await super()._run_group_states(
+                prepared_inputs,
+                client,
+                model,
+                sampling_args,
+            )
+        finally:
+            self._candidate_gate_groups.pop(group_id, None)
 
     async def setup_state(self, state: vf.State) -> None:
         state["proof_opd_stage"] = "proof"
@@ -1010,6 +1074,197 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         info = state.get("input", {}).get("info") if isinstance(state, dict) else None
         info = json_loads_maybe(info)
         return dict(info) if isinstance(info, dict) else {}
+
+    def _update_input_info(self, state: vf.State, **updates: Any) -> None:
+        input_row = state.get("input")
+        if not isinstance(input_row, dict):
+            return
+        info = dict(json_loads_maybe(input_row.get("info")) or {})
+        info.update(updates)
+        input_row["info"] = info
+
+    @staticmethod
+    def _mean_completion_logprob(state: vf.State) -> float:
+        trajectory = state.get("trajectory") or []
+        if not trajectory:
+            return CANDIDATE_LOGPROB_FLOOR
+        step = trajectory[-1]
+        tokens = step.get("tokens") if isinstance(step, dict) else None
+        raw_logprobs = tokens.get("completion_logprobs") if isinstance(tokens, dict) else None
+        values: list[float] = []
+        for raw_value in raw_logprobs or []:
+            if isinstance(raw_value, dict):
+                raw_value = raw_value.get("logprob")
+            try:
+                values.append(float(raw_value))
+            except (TypeError, ValueError):
+                continue
+        return sum(values) / len(values) if values else CANDIDATE_LOGPROB_FLOOR
+
+    @staticmethod
+    def _candidate_gate_sort_key(record: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            bool(record.get("valid")),
+            float(record.get("format_score", 0.0) or 0.0),
+            float(record.get("self_score", -1.0) if record.get("self_score") is not None else -1.0),
+            float(record.get("mean_completion_logprob", CANDIDATE_LOGPROB_FLOOR)),
+            -int(record.get("candidate_index", 0)),
+        )
+
+    def _finalize_candidate_gate_locked(self, group: dict[str, Any]) -> None:
+        if group.get("selected") is not None:
+            return
+        ranked = sorted(
+            group["records"].values(),
+            key=self._candidate_gate_sort_key,
+            reverse=True,
+        )
+        eligible = [record for record in ranked if record.get("valid")]
+        selected = {
+            int(record["candidate_index"])
+            for record in eligible[: int(group["continue_count"])]
+        }
+        group["selected"] = selected
+        group["ranks"] = {
+            int(record["candidate_index"]): rank
+            for rank, record in enumerate(ranked, start=1)
+        }
+
+    async def _submit_candidate_gate_record(
+        self,
+        state: vf.State,
+        record: dict[str, Any],
+        *,
+        wait_for_selection: bool,
+    ) -> bool:
+        info = self._input_info(state)
+        group_id = str(info.get("candidate_group_id") or "")
+        if not self.candidate_gate_enabled or not group_id:
+            return True
+        group = self._candidate_gate_groups.get(group_id)
+        if group is None:
+            LOGGER.warning("Proof-OPD candidate group missing: group=%s", group_id)
+            return True
+
+        candidate_index = int(info.get("candidate_index", -1))
+        record = dict(record)
+        record["candidate_index"] = candidate_index
+        condition: asyncio.Condition = group["condition"]
+        async with condition:
+            group["records"].setdefault(candidate_index, record)
+            state["proof_opd_candidate_gate_submitted"] = True
+            if len(group["records"]) >= int(group["expected"]):
+                self._finalize_candidate_gate_locked(group)
+                condition.notify_all()
+            while wait_for_selection and group.get("selected") is None:
+                await condition.wait()
+
+            if group.get("selected") is None:
+                return False
+            selected = candidate_index in group["selected"]
+            rank = int(group["ranks"].get(candidate_index, 0))
+            self._update_input_info(
+                state,
+                candidate_selected=selected,
+                candidate_rank=rank,
+                candidate_selection_valid=bool(record.get("valid")),
+                candidate_selection_format_score=float(record.get("format_score", 0.0) or 0.0),
+                candidate_selection_self_score=record.get("self_score"),
+                candidate_selection_mean_logprob=record.get("mean_completion_logprob"),
+            )
+            LOGGER.info(
+                "Proof-OPD candidate gate: group=%s candidate=%d rank=%d selected=%s "
+                "valid=%s format=%.3f self_score=%s mean_logprob=%s",
+                group_id,
+                candidate_index,
+                rank,
+                selected,
+                bool(record.get("valid")),
+                float(record.get("format_score", 0.0) or 0.0),
+                record.get("self_score"),
+                record.get("mean_completion_logprob"),
+            )
+            return selected
+
+    async def _candidate_gate_after_proof(
+        self,
+        state: vf.State,
+        parsed: dict[str, Any],
+        invalid_reason: str,
+    ) -> bool:
+        return await self._submit_candidate_gate_record(
+            state,
+            {
+                "valid": not bool(invalid_reason),
+                "format_score": self._format_score(parsed),
+                "self_score": parsed.get("self_score"),
+                "mean_completion_logprob": self._mean_completion_logprob(state),
+                "proof_chars": len(str(parsed.get("proof") or "")),
+                "invalid_reason": invalid_reason,
+            },
+            wait_for_selection=True,
+        )
+
+    def _proof_only_candidate_payload(
+        self,
+        state: vf.State,
+        parsed: dict[str, Any],
+        *,
+        is_truncated: bool,
+        finish_reason: str,
+    ) -> dict[str, Any]:
+        info = self._input_info(state)
+        return {
+            "round_index": 0,
+            "selected_round_index": 0,
+            "reward": 0.0,
+            "format_score": self._format_score(parsed),
+            "format_ok": parsed.get("format_ok", False),
+            "proof_score": None,
+            "meta_score": None,
+            "num_verifiers": self.num_verifiers,
+            "num_verifier_results": 0,
+            "valid_verifier_count": 0,
+            "valid_meta_count": 0,
+            "verifier_reward_terms": [],
+            "verifier_meta_reward": None,
+            "verifier_results": [],
+            "self_score": parsed.get("self_score"),
+            "proof_chars": len(str(parsed.get("proof") or "")),
+            "self_evaluation_chars": len(str(parsed.get("self_evaluation") or "")),
+            "closed_thinking": parsed.get("closed_thinking", False),
+            "is_truncated": is_truncated,
+            "finish_reason": finish_reason,
+            "reason": "candidate_gate_proof_only",
+            "generation_raw_output": parsed.get("raw_output", ""),
+            "proof": parsed.get("proof", ""),
+            "self_evaluation": parsed.get("self_evaluation", ""),
+            "candidate_selected": False,
+            "candidate_rank": info.get("candidate_rank"),
+            "candidate_index": info.get("candidate_index"),
+            "candidate_group_size": info.get("candidate_group_size"),
+            "stage_records": list(state.get("proof_opd_stage_records") or []),
+        }
+
+    @vf.cleanup(priority=50)
+    async def release_candidate_gate_on_failed_rollout(self, state: vf.State) -> None:
+        if state.get("proof_opd_candidate_gate_submitted"):
+            return
+        info = self._input_info(state)
+        if not info.get("candidate_group_id"):
+            return
+        await self._submit_candidate_gate_record(
+            state,
+            {
+                "valid": False,
+                "format_score": 0.0,
+                "self_score": None,
+                "mean_completion_logprob": CANDIDATE_LOGPROB_FLOOR,
+                "proof_chars": 0,
+                "invalid_reason": "rollout_failed_before_candidate_gate",
+            },
+            wait_for_selection=False,
+        )
 
     def _effective_meta_score(self, result: dict[str, Any]) -> float:
         if not self.enable_meta_verification:
@@ -1128,6 +1383,15 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "task_id": info.get("task_id") or self._input_value(state, "task_id"),
             "source_index": info.get("source_index") or self._input_value(state, "source_index"),
             "task_type": payload.get("task_type") or info.get("task_type") or self._input_value(state, "task_type"),
+            "candidate_group_id": info.get("candidate_group_id"),
+            "candidate_group_size": info.get("candidate_group_size"),
+            "candidate_index": info.get("candidate_index"),
+            "candidate_rank": info.get("candidate_rank"),
+            "candidate_selected": info.get("candidate_selected"),
+            "candidate_continue_count": info.get("candidate_continue_count"),
+            "candidate_selection_format_score": info.get("candidate_selection_format_score"),
+            "candidate_selection_self_score": info.get("candidate_selection_self_score"),
+            "candidate_selection_mean_logprob": info.get("candidate_selection_mean_logprob"),
             "problem": clipped_trace_text(self._problem(state)),
             "reward": payload.get("reward", 0.0),
             "format_score": payload.get("format_score", 0.0),
@@ -1512,6 +1776,16 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         payload = self._finalize_round(state)
         if self._should_refine(state, payload):
             return self._next_refinement_prompt(state, payload)
+        if float(payload.get("reward", 0.0) or 0.0) >= self.refine_early_stop_reward:
+            payload.update(
+                {
+                    "selector_valid": False,
+                    "selector_fallback_used": False,
+                    "selector_invalid_reason": "skipped_early_stop_reward",
+                }
+            )
+            state["proof_opd_reward_payload"] = payload
+            return self._stop(state)
         return self._next_selector_prompt(state)
 
     async def env_response(self, messages: vf.Messages, state: vf.State, **_: Any) -> vf.Messages:
@@ -1535,6 +1809,13 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 is_truncated=is_truncated,
                 finish_reason=finish_reason,
             )
+            candidate_selected = True
+            if stage == "proof":
+                candidate_selected = await self._candidate_gate_after_proof(
+                    state,
+                    parsed,
+                    invalid_reason,
+                )
             if invalid_reason:
                 payload = self._invalid_generation_payload(
                     parsed,
@@ -1550,6 +1831,20 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 LOGGER.info("Proof-OPD invalid generation: %s", json.dumps(payload, ensure_ascii=False))
                 if self._rank_selector_candidates(state):
                     return self._next_selector_prompt(state)
+                return self._stop(state)
+            if stage == "proof" and not candidate_selected:
+                payload = self._proof_only_candidate_payload(
+                    state,
+                    parsed,
+                    is_truncated=is_truncated,
+                    finish_reason=finish_reason,
+                )
+                state.setdefault("proof_opd_rounds", []).append(payload)
+                state["proof_opd_reward_payload"] = payload
+                LOGGER.info(
+                    "Proof-OPD candidate stopped after proof-only stage: %s",
+                    json.dumps(payload, ensure_ascii=False)[:4000],
+                )
                 return self._stop(state)
             payload = self._maybe_score_valid_generation_for_eval(
                 state,
@@ -1863,6 +2158,8 @@ def load_environment(
     refine_review_n: int = 2,
     refine_early_stop_reward: float = 0.95,
     selector_top_k: int = 3,
+    candidate_gate_enabled: bool | str = False,
+    candidate_continue_count: int = 4,
     **_: Any,
 ) -> vf.Environment:
     proof_rows = read_dataset_rows(dataset_path)
@@ -1916,4 +2213,8 @@ def load_environment(
         require_closed_think=parse_bool(require_closed_think, True),
         refine_early_stop_reward=float(refine_early_stop_reward),
         selector_top_k=int(selector_top_k),
+        candidate_gate_enabled=(
+            parse_bool(candidate_gate_enabled, False) and not use_verifiable_eval
+        ),
+        candidate_continue_count=int(candidate_continue_count),
     )

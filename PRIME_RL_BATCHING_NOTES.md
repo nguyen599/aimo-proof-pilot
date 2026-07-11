@@ -1,6 +1,6 @@
 # Prime-RL OPD Batching Notes
 
-Date: 2026-07-09
+Date: 2026-07-12
 
 This note records the current understanding of why Prime-RL OPD training can show
 `Starting forward and backward pass (batch_size=1)` even when the command sets
@@ -34,6 +34,17 @@ Prime-RL currently has three batch-like units that are easy to confuse:
    `prime_rl/orchestrator/train_sink.py`, it counts finalized `Rollout` objects
    sitting in `pending_batch`. When enough finalized rollouts are ready, the sink
    writes one `TrainingBatch` for the trainer.
+
+   The current long-context command instead sets
+   `PRIME_PACKED_SEQUENCES_PER_STEP=64`. The wrapper converts that to:
+
+   ```text
+   orchestrator.token_batch_size = max_seq_length * 64
+   ```
+
+   Prime then ships a batch after complete environment rollouts have accumulated
+   that many prompt-plus-completion tokens. `PRIME_BATCH_SIZE` remains available
+   for compatibility when `PRIME_PACKED_SEQUENCES_PER_STEP=0`.
 
 2. `PRIME_GROUP_SIZE`
 
@@ -73,41 +84,40 @@ In both cases, `prepare_batch(...)` packs samples into microbatch bins up to
 `seq_len`, then distributes bins across DP workers. One trainer rank can still
 see `len(micro_batches) == 1` if the packed batch for that rank has only one bin.
 
-## Why This Can Be Inefficient
+## Current Proof-OPD Boundary
 
-For the proof OPD workflow, one original problem can expand into many possible
-training traces:
+The 8-node command uses `PRIME_GROUP_SIZE=8` and enables the Proof-OPD candidate
+gate. Prime invokes one verifiers `run_group`; all eight rollouts generate a proof
+concurrently. A group-local barrier then ranks the proof outputs. Four candidates
+stop with proof-only traces, while the best four continue through verifier,
+optional meta-verifier, refinement, and selector stages.
+
+There is deliberately no persistent cross-rollout streaming scheduler. This keeps
+the normal verifiers/Prime lifecycle and avoids carrying mutable candidate state
+across independently dispatched tasks. The candidate state exists only for the
+lifetime of one `run_group`. Prime receives the group after all four continuing
+paths finish, so the full eight-member group remains the atomic orchestrator unit.
+
+The global token targets are:
 
 ```text
-bs * (N + N*V + N*V*M) * (R + 1)
+8,192 * 64 = 524,288 tokens per optimizer step (short backward smoke)
+81,920 * 64 = 5,242,880 tokens per optimizer step (long-context target)
 ```
 
-Example:
-
-```text
-bs=2, candidates N=4, verifiers V=4, meta M=2, refine rounds R=2
-2 * (4 + 4*4 + 4*4*2) * 3 = 312 possible training samples
-```
-
-Waiting for a whole problem/group/refinement tree before training can delay the
-first backward pass, especially when long proof generations are uneven.
-
-For OPD, a better behavior may be to train once a useful amount of rollout work is
-ready, such as about 64 completed rollout traces, without waiting for the entire
-question tree.
+These are global pre-packing targets. Prime's trainer packer still decides the
+actual number of fixed-length microbatch bins and distributes them over data
+parallel ranks. The final completed rollout can make a token batch overshoot the
+target.
 
 ## Candidate Future Changes
 
-No code change is made in this note. Possible future changes:
+Possible future changes, only if full-environment latency becomes a measured
+bottleneck:
 
-- Set `PRIME_GROUP_SIZE=1` for OPD to avoid waiting for group completion.
-- Add an OPD-specific streaming mode in `TrainSink` that finalizes non-group-scored
-  rollouts immediately while keeping the existing behavior for GRPO/group-scored
-  environments.
-- Add a threshold like `prime_opd_stream_batch_rollouts=64`, so the orchestrator
-  writes a training batch after roughly 64 completed rollout traces.
-- Add token-based batching at the orchestrator level for OPD, so batches target a
-  useful packed-token budget rather than a raw rollout count.
+- Split the environment into durable stage jobs backed by persistent storage.
+- Preserve parent/candidate identity without patching the generic verifiers bridge.
+- Resume failed stage jobs idempotently and garbage-collect completed candidate trees.
 - Log these separately:
   - orchestrator pending finalized rollouts
   - orchestrator pending tokens
@@ -115,6 +125,6 @@ No code change is made in this note. Possible future changes:
   - number of packed trainer microbatches
   - per-rank packed token counts
 
-The immediate debugging conclusion is that `batch_size=1` in the trainer log does
-not prove `PRIME_BATCH_SIZE` was ignored. It means the shipped training payload
-packed into one local microbatch on that trainer rank.
+The immediate debugging conclusion remains that `batch_size=1` in the trainer log
+does not prove the orchestrator threshold was ignored. It means the shipped
+training payload packed into one local microbatch on that trainer rank.

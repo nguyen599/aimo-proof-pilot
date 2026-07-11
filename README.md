@@ -138,14 +138,17 @@ Dataset workflow:
 
 Runtime workflow:
 
-1. Proof generation prompt.
-2. Parse the assistant output and require a closed `</think>` unless `--prime_proof_require_closed_think false` is used.
-3. Extract only the visible `## Solution` section; if the generation is truncated or malformed, stop the trace and assign zero proof reward.
-4. Run a verifier prompt over the extracted proof.
-5. If verifier output is valid and its proof score is below `1`, run a meta-verifier prompt over the verifier analysis. A verifier score of `1` skips the meta call and uses a neutral meta multiplier of `1.0`.
-6. Compute `reward = format_score * verifier_score * meta_score`, clamped to `[0, 1]`.
-7. Optionally run a refinement round when the selected reward is below `--prime_proof_refine_early_stop_reward`.
-8. After refinement ends, rank the initial and refined proofs by `format_score * verifier_meta_reward`, send the best three (configurable with `--prime_proof_selector_top_k`) to a selector turn, and use the selected proof's score as the final environment reward. Invalid selector XML falls back to the highest pre-selector score.
+1. Prime starts one candidate group. The 8-node command defaults to `--prime_group_size 8`.
+2. All eight candidates generate one proof concurrently.
+3. Parse each proof and require a closed `</think>` unless `--prime_proof_require_closed_think false` is used.
+4. With `--prime_proof_candidate_gate true`, rank the candidates by valid/closed format, format score, self-evaluation score, and mean completion log-probability. The best four continue; the other four stop with proof-only training traces.
+5. Run verifier prompts over the extracted proof.
+6. If verifier output is valid and its proof score is below `1`, run a meta-verifier prompt over the verifier analysis. A verifier score of `1` skips the meta call and uses a neutral meta multiplier of `1.0`.
+7. Compute `reward = format_score * average(verifier_score_i * meta_score_i)`, clamped to `[0, 1]`.
+8. Optionally run a refinement round when the selected reward is below `--prime_proof_refine_early_stop_reward`. A reward at or above the threshold now stops immediately without an unnecessary selector call.
+9. When refinement ends below the early-stop threshold, rank the initial and refined proofs by `format_score * verifier_meta_reward`, send the best three (configurable with `--prime_proof_selector_top_k`) to a selector turn, and use the selected proof's score as the final environment reward. Invalid selector XML falls back to the highest pre-selector score.
+
+The candidate gate is local to one verifiers `run_group`; it does not keep mutable state across Prime tasks. Prime receives the eight-member group only after the four continuing candidates finish, preserving full-environment batching. Override the split with `PRIME_GROUP_SIZE` and `PRIME_PROOF_CANDIDATE_CONTINUE_COUNT` in the 8-node command.
 
 Refinement evidence is ordered by lowest verifier score first, then highest effective meta score. This prioritizes reviews that identify problems; score-`1` verifier reviews are used only when fewer than `--prime_proof_refine_review_n` lower-scoring reviews are available.
 

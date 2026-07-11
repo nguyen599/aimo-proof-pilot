@@ -257,6 +257,15 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
         refine_rounds = args.prime_proof_refine_rounds
         if args.prime_algorithm == "opd" and refine_rounds == 0:
             refine_rounds = 1
+        if args.prime_proof_candidate_gate:
+            if args.prime_group_size <= 1:
+                raise ValueError(
+                    "--prime_proof_candidate_gate requires --prime_group_size greater than 1."
+                )
+            if args.prime_proof_candidate_continue_count > args.prime_group_size:
+                raise ValueError(
+                    "--prime_proof_candidate_continue_count cannot exceed --prime_group_size."
+                )
         return {
             "id": effective_env_id,
             "name": effective_env_name if effective_env_name != "math" else "proof_math",
@@ -277,6 +286,8 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
                 "refine_review_n": args.prime_proof_refine_review_n,
                 "refine_early_stop_reward": args.prime_proof_refine_early_stop_reward,
                 "selector_top_k": args.prime_proof_selector_top_k,
+                "candidate_gate_enabled": args.prime_proof_candidate_gate,
+                "candidate_continue_count": args.prime_proof_candidate_continue_count,
             },
         }
 
@@ -336,6 +347,21 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
         "name": effective_env_name,
         "args": env_args,
     }
+
+
+def resolve_prime_token_batch_size(args: argparse.Namespace) -> int | None:
+    explicit_tokens = args.prime_token_batch_size
+    packed_sequences = int(args.prime_packed_sequences_per_step)
+    if explicit_tokens is not None and packed_sequences > 0:
+        raise ValueError(
+            "Set only one of --prime_token_batch_size or "
+            "--prime_packed_sequences_per_step."
+        )
+    if explicit_tokens is not None:
+        return int(explicit_tokens)
+    if packed_sequences <= 0:
+        return None
+    return int(args.max_seq_length) * packed_sequences
 
 
 def build_prime_eval_config(args: argparse.Namespace) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[dict[str, Any]]]:
@@ -427,14 +453,27 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "name": args.wandb_name,
         }
 
+    token_batch_size = resolve_prime_token_batch_size(args)
+    if token_batch_size is not None and args.prime_max_inflight_rollouts is None:
+        raise ValueError(
+            "--prime_max_inflight_rollouts is required when token-based batching is enabled."
+        )
+    if token_batch_size is not None and args.prime_oversampling_factor is not None:
+        raise ValueError(
+            "--prime_oversampling_factor is only valid with rollout-count batching."
+        )
+
     orchestrator_config = {
-        "batch_size": args.prime_batch_size,
+        "batch_size": args.prime_batch_size if token_batch_size is None else None,
+        "token_batch_size": token_batch_size,
         "group_size": args.prime_group_size,
         "seq_len": args.max_seq_length,
         "max_steps": args.max_train_steps,
         "max_inflight_rollouts": args.prime_max_inflight_rollouts,
         "max_off_policy_steps": args.prime_max_off_policy_steps,
-        "oversampling_factor": args.prime_oversampling_factor,
+        "oversampling_factor": (
+            args.prime_oversampling_factor if token_batch_size is None else None
+        ),
     }
     if args.prime_disable_zero_advantage_filter:
         orchestrator_config["post_batch_filters"] = [
@@ -1109,6 +1148,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_proof_refine_reward_mode", default="selected", choices=("selected", "best", "final"))
     parser.add_argument("--prime_proof_refine_early_stop_reward", type=float, default=0.95)
     parser.add_argument("--prime_proof_selector_top_k", type=int, default=3)
+    parser.add_argument("--prime_proof_candidate_gate", type=parse_bool, default=False)
+    parser.add_argument("--prime_proof_candidate_continue_count", type=int, default=4)
     parser.add_argument("--prime_eval_verifiable_dataset_path", default=None)
     parser.add_argument("--prime_eval_name", default="proof_math_verifiable")
     parser.add_argument("--prime_eval_interval", type=int, default=10)
@@ -1129,6 +1170,25 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_eval_require_closed_think", type=parse_bool, default=True)
     parser.add_argument("--prime_batch_size", type=int, default=2)
     parser.add_argument("--prime_group_size", type=int, default=2)
+    parser.add_argument(
+        "--prime_token_batch_size",
+        type=int,
+        default=None,
+        help=(
+            "Global prompt-plus-completion token target per optimizer step. This selects "
+            "Prime-RL token batching and is mutually exclusive with "
+            "--prime_packed_sequences_per_step."
+        ),
+    )
+    parser.add_argument(
+        "--prime_packed_sequences_per_step",
+        type=int,
+        default=0,
+        help=(
+            "Convenience target for Prime-RL token batching. A positive value sets "
+            "token_batch_size=max_seq_length*value; 0 preserves rollout-count batching."
+        ),
+    )
     parser.add_argument("--prime_max_inflight_rollouts", type=int, default=None)
     parser.add_argument(
         "--prime_max_off_policy_steps",
@@ -1356,6 +1416,19 @@ def main(argv: list[str] | None = None) -> int:
     log(f"Prime-RL config written: {config_path}")
     log(f"output_dir={output_dir}")
     log(f"log_dir={log_dir}")
+    orchestrator_config = config["orchestrator"]
+    if orchestrator_config.get("token_batch_size") is not None:
+        log(
+            "Prime-RL token batching enabled after complete environment rollouts: "
+            f"token_batch_size={orchestrator_config['token_batch_size']} "
+            f"seq_len={args.max_seq_length} "
+            f"packed_sequences_target={args.prime_packed_sequences_per_step or 'explicit_tokens'}"
+        )
+    else:
+        log(
+            "Prime-RL rollout batching enabled: "
+            f"batch_size={orchestrator_config.get('batch_size')}"
+        )
     env_config = config["train_envs"][0]
     log(f"Prime-RL env id={env_config['id']} name={env_config['name']} args={redacted(env_config['args'])}")
     for eval_env_config in config.get("eval_envs", []):
