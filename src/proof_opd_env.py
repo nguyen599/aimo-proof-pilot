@@ -1016,6 +1016,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             return 1.0
         if not result.get("verifier_valid"):
             return 0.0
+        if result.get("meta_invalid_reason") == "skipped_perfect_verifier":
+            return 1.0
         if result.get("meta_valid"):
             return clamp01(float(result.get("meta_score") or 0.0))
         return 0.5
@@ -1060,10 +1062,14 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         selected = valid[: self.refine_review_n]
         analyses: list[str] = []
         for result in selected:
+            if result.get("meta_invalid_reason") == "skipped_perfect_verifier":
+                meta_score_label = "not run (neutral 1.000)"
+            else:
+                meta_score_label = f"{self._effective_meta_score(result):.3f}"
             parts = [
                 f"Verifier #{int(result.get('verify_index', 0)) + 1}",
                 f"Verifier score: {result.get('proof_score')}",
-                f"Meta-verifier score: {self._effective_meta_score(result):.3f}",
+                f"Meta-verifier score: {meta_score_label}",
                 "",
                 "Verifier evaluation:",
                 str(result.get("verifier_evaluation") or "").strip(),
@@ -1596,7 +1602,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             }
             state["proof_opd_verifier"] = verifier
             state["proof_opd_pending_verifier_result"] = result
-            if self.enable_meta_verification and not invalid_reason:
+            verifier_score = self._effective_verifier_score(result)
+            if self.enable_meta_verification and not invalid_reason and verifier_score < 1.0:
                 proof = str((state.get("proof_opd_generation") or {}).get("proof") or "")
                 prompt = build_deepseek_meta_verification_prompt(problem, proof, verifier["evaluation"])
                 log_llm_input(
@@ -1606,9 +1613,21 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 )
                 state["proof_opd_stage"] = "meta"
                 return [vf.UserMessage(content=prompt)]
+            if not invalid_reason and self.enable_meta_verification:
+                LOGGER.info(
+                    "Proof-OPD skipping meta verifier: verifier score is 1 "
+                    "verify_index=%d evaluation_chars=%d",
+                    int(state.get("proof_opd_verify_index", 0)),
+                    len(str(verifier.get("evaluation") or "")),
+                )
             result["meta"] = None
             result["meta_valid"] = False
-            result["meta_invalid_reason"] = "skipped_invalid_verifier" if invalid_reason else "disabled"
+            if invalid_reason:
+                result["meta_invalid_reason"] = "skipped_invalid_verifier"
+            elif self.enable_meta_verification:
+                result["meta_invalid_reason"] = "skipped_perfect_verifier"
+            else:
+                result["meta_invalid_reason"] = "disabled"
             result["meta_score"] = 0.0 if invalid_reason else 1.0
             result["meta_analysis"] = ""
             result["meta_raw_output"] = ""

@@ -142,10 +142,12 @@ Runtime workflow:
 2. Parse the assistant output and require a closed `</think>` unless `--prime_proof_require_closed_think false` is used.
 3. Extract only the visible `## Solution` section; if the generation is truncated or malformed, stop the trace and assign zero proof reward.
 4. Run a verifier prompt over the extracted proof.
-5. If verifier output is valid, run a meta-verifier prompt over the verifier analysis.
+5. If verifier output is valid and its proof score is below `1`, run a meta-verifier prompt over the verifier analysis. A verifier score of `1` skips the meta call and uses a neutral meta multiplier of `1.0`.
 6. Compute `reward = format_score * verifier_score * meta_score`, clamped to `[0, 1]`.
 7. Optionally run a refinement round when the selected reward is below `--prime_proof_refine_early_stop_reward`.
 8. After refinement ends, rank the initial and refined proofs by `format_score * verifier_meta_reward`, send the best three (configurable with `--prime_proof_selector_top_k`) to a selector turn, and use the selected proof's score as the final environment reward. Invalid selector XML falls back to the highest pre-selector score.
+
+Refinement evidence is ordered by lowest verifier score first, then highest effective meta score. This prioritizes reviews that identify problems; score-`1` verifier reviews are used only when fewer than `--prime_proof_refine_review_n` lower-scoring reviews are available.
 
 For verifiable training rows, the proof-generation prompt additionally asks the model to include one final answer in `\boxed{...}` inside the `## Solution` section. Train-time OPD reward still comes only from the proof/verifier/meta path. Boxed-answer accuracy is tracked through the separate eval dataset instead of the mixed train data.
 
