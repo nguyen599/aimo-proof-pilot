@@ -24,6 +24,8 @@ GO_VERSION="${GO_VERSION:-1.26.3}"
 APPTAINER_MAKE_JOBS="${APPTAINER_MAKE_JOBS:-2}"
 BUILD_VERBOSE="${BUILD_VERBOSE:-1}"
 BUILD_MONITOR_INTERVAL_SECONDS="${BUILD_MONITOR_INTERVAL_SECONDS:-60}"
+CUDA_VERSION="${CUDA_VERSION:-}"
+SIF_BASE_IMAGE="${SIF_BASE_IMAGE:-}"
 
 APT_PACKAGES=(
     ca-certificates
@@ -202,7 +204,15 @@ build_sif() {
     mapfile -t builder_prefix < <(build_command_prefix "${builder_cmd}")
     (
         cd "${REPO_DIR}"
-        "${builder_prefix[@]}" build --force "${SIF_PATH}" "${DEF_NAME}"
+        build_args=(build --force)
+        if [ -n "${CUDA_VERSION}" ]; then
+            build_args+=(--build-arg "CUDA_VERSION=${CUDA_VERSION}")
+        fi
+        if [ -n "${SIF_BASE_IMAGE}" ]; then
+            build_args+=(--build-arg "BASE_IMAGE=${SIF_BASE_IMAGE}")
+        fi
+        build_args+=("${SIF_PATH}" "${DEF_NAME}")
+        "${builder_prefix[@]}" "${build_args[@]}"
     ) > >(tee "${LOG_PATH}") 2>&1 &
     local build_pid="$!"
     monitor_build_progress "${build_pid}" &

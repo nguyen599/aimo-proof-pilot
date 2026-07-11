@@ -184,7 +184,29 @@ Optional `solution` is kept for reference. Verifiable data should provide:
 Build:
 
 ```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile -t aimo-proof-pilot:cu130 .
+# CUDA 12.8 (the helper derives the base image, package family, and wheel indexes)
+CUDA_VERSION=12.8.1 bash scripts/build_docker.sh
+
+# CUDA 13.0
+CUDA_VERSION=13.0.2 bash scripts/build_docker.sh
+```
+
+Supported selectors are `12.8.x`, `12.9.x`, and `13.0.x`. Override `IMAGE_TAG`
+or `BASE_IMAGE` when needed. CUDA 12 installs a published cu129 vLLM wheel and
+uses the cu129 nightly index for dependency resolution while retaining the
+cu128 Torch pin.
+Set `VLLM_BUILD_FROM_SOURCE=1` on `scripts/build_docker.sh` only to opt into
+the retained source-build path.
+
+When that source path is enabled, its CUDA 12.8 vLLM artifact is stored at
+`nguyen599/prebuild-wheels-util/torch2.11+cu128/vllm-0.23.1rc1.dev699+gf5a8d7337-cp38-abi3-linux_x86_64.whl`.
+To build and publish it explicitly:
+
+```bash
+CUDA_VERSION=12.8.1 \
+VLLM_INSTALL_WHEEL=1 \
+VLLM_UPLOAD_WHEEL=1 \
+bash src/build_vllm_wheel.sh
 ```
 
 Run with four H200 GPUs:
@@ -196,7 +218,7 @@ docker run --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
   -e HF_TOKEN \
   -e WANDB_API_KEY \
   -e WANDB_MODE=online \
-  aimo-proof-pilot:cu130 \
+  aimo-proof-pilot:cu128 \
   bash /workspace/aimo-proof-pilot/operator_commands/prime_rl_opd_4xh200_muon_imo_ctx16384_2train_1policy_1teacher.sh
 ```
 
@@ -205,6 +227,11 @@ docker run --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
 Build and upload helpers are in `scripts/`:
 
 ```bash
+bash scripts/build_sif_and_upload.sh
+
+# Build from a previously published CUDA 12.8 Docker image.
+CUDA_VERSION=12.8.1 \
+SIF_BASE_IMAGE=chankhavu/aimo-proof-pilot:cu128 \
 bash scripts/build_sif_and_upload.sh
 ```
 

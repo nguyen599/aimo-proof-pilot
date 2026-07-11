@@ -1,5 +1,9 @@
 Bootstrap: docker
-From: chankhavu/aimo-proof-pilot:v4
+From: {{ BASE_IMAGE }}
+
+%arguments
+    BASE_IMAGE=chankhavu/aimo-proof-pilot:v4
+    CUDA_VERSION=13.0.2
 
 %environment
     export SUBMISSIONS_REPO=https://github.com/nguyen599/aimo-proof-pilot.git
@@ -42,16 +46,17 @@ From: chankhavu/aimo-proof-pilot:v4
     export HTTPX_LOG_LEVEL=WARNING
     export OMP_NUM_THREADS=8
     export HF_XET_HIGH_PERFORMANCE=1
+    export CUDA_VERSION={{ CUDA_VERSION }}
     export CUDNN_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cudnn/include
-    export CPLUS_INCLUDE_PATH=/usr/local/cuda-13.0/include:/usr/local/cuda-13.0/include/cccl:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/include:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/include
-    export CPATH=/usr/local/cuda-13.0/targets/x86_64-linux/include:/usr/local/cuda/include:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/include
-    export CUDAToolkit_ROOT=/usr/local/cuda-13.0
-    export CUDA_HOME=/usr/local/cuda-13.0
-    export CUDA_PATH=/usr/local/cuda-13.0
-    export CUDACXX=/usr/local/cuda-13.0/bin/nvcc
+    export CPLUS_INCLUDE_PATH=/usr/local/cuda/include:/usr/local/cuda/include/cccl:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/include:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/include
+    export CPATH=/usr/local/cuda/targets/x86_64-linux/include:/usr/local/cuda/include:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/include
+    export CUDAToolkit_ROOT=/usr/local/cuda
+    export CUDA_HOME=/usr/local/cuda
+    export CUDA_PATH=/usr/local/cuda
+    export CUDACXX=/usr/local/cuda/bin/nvcc
     export GDRCOPY_HOME=/root/gdrcopy
-    export PATH=/usr/local/cuda-13.0/bin:/usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    export LD_LIBRARY_PATH=/usr/local/cudnn/lib:/usr/local/cuda-13.0/lib64:/usr/local/ucx/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib64:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
+    export PATH=/usr/local/cuda/bin:/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    export LD_LIBRARY_PATH=/usr/local/cudnn/lib:/usr/local/cuda/lib64:/usr/local/ucx/lib:/opt/nvidia/nvda_nixl/lib/x86_64-linux-gnu:/opt/nvidia/nvda_nixl/lib64:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
     # Pass secrets at build/runtime via the environment; do not commit them.
     export HF_TOKEN="${HF_TOKEN:-}"
     export WANDB_API_KEY="${WANDB_API_KEY:-}"
@@ -97,7 +102,7 @@ From: chankhavu/aimo-proof-pilot:v4
     if [ "${SKIP_INSTALL_TRAINING_DEPS:-1}" != "1" ]; then
         OLMO_CORE_REF="${OLMO_CORE_REF:-main}" \
         OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF:-main}" \
-        CUDA_VERSION="${CUDA_VERSION:-13.0.2}" \
+        CUDA_VERSION="{{ CUDA_VERSION }}" \
         INSTALL_MODAL_SIMP_EXTRAS=1 \
         INSTALL_FULL_SYSTEM_APT="${INSTALL_FULL_SYSTEM_APT:-1}" \
         INSTALL_CONTAINER_BUILD_APT="${INSTALL_CONTAINER_BUILD_APT:-0}" \
@@ -113,11 +118,12 @@ From: chankhavu/aimo-proof-pilot:v4
     if ! command -v uv >/dev/null 2>&1; then
         python -m pip install --no-cache-dir --upgrade uv
     fi
+    source /app/cuda_config.sh
     uv pip install --system --prerelease=allow --no-cache-dir \
         "verifiers[harbor]>=0.1.15.dev411" \
         "deep-gemm @ https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/deep_gemm-2.5.0+891d57b-cp312-cp312-linux_x86_64.whl"
     uv pip uninstall --system kernels || true
-    uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
+    uv pip install --system --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
     if [ -f /app/remote-shell/daemon/requirements.txt ]; then
         uv pip install --system --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
     fi
@@ -254,11 +260,12 @@ import torch
 print("proof pilot SIF OK")
 print("torch", torch.__version__)
 print("cuda", torch.version.cuda)
+cuda_major = str(torch.version.cuda or "13").split(".", 1)[0]
 for dist_name in [
     "vllm",
     "torchao",
     "transformer-engine",
-    "nvidia-nccl-cu13",
+    f"nvidia-nccl-cu{cuda_major}",
     "flashinfer-python",
     "flash-attn",
     "flash-attn-3",

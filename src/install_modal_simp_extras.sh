@@ -4,25 +4,30 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export UV_BREAK_SYSTEM_PACKAGES=1
 
-CUDA_VERSION="${CUDA_VERSION:-13.0.2}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CUDA_CONFIG_FILE="${CUDA_CONFIG_FILE:-${SCRIPT_DIR}/cuda_config.sh}"
+# shellcheck source=src/cuda_config.sh
+source "${CUDA_CONFIG_FILE}"
+
 CUDA_ARCH_LIST="${CUDA_ARCH_LIST:-90}"
 TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-9.0}"
 NV_GROUPED_GEMM_TORCH_CUDA_ARCH_LIST="${NV_GROUPED_GEMM_TORCH_CUDA_ARCH_LIST:-9.0}"
-FLASHINFER_INDEX_URL="${FLASHINFER_INDEX_URL:-https://flashinfer.ai/whl/cu130}"
-FLASH_ATTN_WHEEL_URL="${FLASH_ATTN_WHEEL_URL:-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu130torch2.11-cp312-cp312-linux_x86_64.whl}"
-FLASH_ATTN_3_WHEEL_URL="${FLASH_ATTN_3_WHEEL_URL:-https://github.com/windreamer/flash-attention3-wheels/releases/download/2026.05.11-5e0e3b1/flash_attn_3-3.0.0+20260511.cu130torch2110cxx11abitrue.ab6632-cp39-abi3-linux_x86_64.whl}"
 FLASH_ATTN_4_WHEEL_URL="${FLASH_ATTN_4_WHEEL_URL:-https://github.com/Dao-AILab/flash-attention/releases/download/fa4-v4.0.0.beta15/flash_attn_4-4.0.0b15-py3-none-any.whl}"
 # Stable vLLM 0.24.0 release wheel (what prime-rl@main pins) instead of a wheels.vllm.ai nightly, so
 # the baked build matches the runtime fetch rather than being a throwaway artifact overwritten at launch.
 VLLM_WHEEL_URL="${VLLM_WHEEL_URL:-https://github.com/vllm-project/vllm/releases/download/v0.24.0/vllm-0.24.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl}"
+VLLM_CU129_NIGHTLY_INDEX_URL="${VLLM_CU129_NIGHTLY_INDEX_URL:-https://wheels.vllm.ai/nightly/cu129}"
+VLLM_PREBUILT_WHEEL_REPO="${VLLM_PREBUILT_WHEEL_REPO:-nguyen599/prebuild-wheels-util}"
+VLLM_PREBUILT_WHEEL_NAME="${VLLM_PREBUILT_WHEEL_NAME:-vllm-0.23.1rc1.dev699+gf5a8d7337-cp38-abi3-linux_x86_64.whl}"
+VLLM_PREBUILT_WHEEL_FILE="${VLLM_PREBUILT_WHEEL_FILE:-${VLLM_PREBUILT_WHEELS_DIR}/${VLLM_PREBUILT_WHEEL_NAME}}"
+VLLM_BUILD_FROM_SOURCE="${VLLM_BUILD_FROM_SOURCE:-0}"
 TVM_FFI_SPEC="${TVM_FFI_SPEC:-apache-tvm-ffi<0.1.12}"
-NVIDIA_CUTLASS_DSL_SPEC="${NVIDIA_CUTLASS_DSL_SPEC:-nvidia-cutlass-dsl[cu13]==4.5.2}"
-PREBUILT_WHEELS_DIR="${PREBUILT_WHEELS_DIR:-torch2.11+cu130}"
 TRANSFORMER_ENGINE_WHEEL_REPO="nguyen599/prebuild-wheels-util"
 TRANSFORMER_ENGINE_WHEEL_FILE="${TRANSFORMER_ENGINE_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl}"
+TRANSFORMER_ENGINE_FALLBACK_SPEC="${TRANSFORMER_ENGINE_FALLBACK_SPEC:-transformer_engine[pytorch]}"
 APEX_PREBUILT_WHEEL_FILE="${APEX_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/apex-0.1-cp312-cp312-linux_x86_64.whl}"
 CAUSAL_CONV1D_PREBUILT_WHEEL_FILE="${CAUSAL_CONV1D_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/causal_conv1d-1.6.2.post1-cp312-cp312-linux_x86_64.whl}"
-MAMBA_SSM_PREBUILT_WHEEL_FILE="${MAMBA_SSM_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/mamba_ssm-2.3.2.post1-cp312-cp312-linux_x86_64.whl}"
+MAMBA_SSM_PREBUILT_WHEEL_FILE="${MAMBA_SSM_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/mamba_ssm-2.3.2.post1-py3-none-any.whl}"
 INSTALL_COMPILED_MODAL_KERNELS="${INSTALL_COMPILED_MODAL_KERNELS:-1}"
 INSTALL_APEX="${INSTALL_APEX:-1}"
 INSTALL_FLASH_ATTN_4="${INSTALL_FLASH_ATTN_4:-1}"
@@ -47,8 +52,6 @@ INSTALL_FULL_SYSTEM_APT="${INSTALL_FULL_SYSTEM_APT:-1}"
 INSTALL_CONTAINER_BUILD_APT="${INSTALL_CONTAINER_BUILD_APT:-1}"
 INSTALL_ROOTLESS_PROOT_WORKAROUNDS="${INSTALL_ROOTLESS_PROOT_WORKAROUNDS:-0}"
 MODAL_EXTRAS_CACHE="${MODAL_EXTRAS_CACHE:-/root}"
-FLASH_ATTN_WHEEL_NAME="flash_attn-2.8.3+cu130torch2.11-cp312-cp312-linux_x86_64.whl"
-FLASH_ATTN_3_WHEEL_NAME="flash_attn_3-3.0.0+20260511.cu130torch2110cxx11abitrue.ab6632-cp39-abi3-linux_x86_64.whl"
 FLASH_ATTN_4_WHEEL_NAME="flash_attn_4-4.0.0b15-py3-none-any.whl"
 FLASH_ATTN_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/${FLASH_ATTN_WHEEL_NAME}"
 FLASH_ATTN_3_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/${FLASH_ATTN_3_WHEEL_NAME}"
@@ -58,6 +61,7 @@ TRANSFORMER_ENGINE_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/${TRANSFORMER_ENGINE_WHEEL_
 APEX_PREBUILT_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/$(basename "${APEX_PREBUILT_WHEEL_FILE}")"
 CAUSAL_CONV1D_PREBUILT_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/$(basename "${CAUSAL_CONV1D_PREBUILT_WHEEL_FILE}")"
 MAMBA_SSM_PREBUILT_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/$(basename "${MAMBA_SSM_PREBUILT_WHEEL_FILE}")"
+VLLM_PREBUILT_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/${VLLM_PREBUILT_WHEEL_NAME}"
 
 mkdir -p "${MODAL_EXTRAS_CACHE}"
 
@@ -167,7 +171,7 @@ if ! command -v uv >/dev/null 2>&1; then
     python -m pip install --no-cache-dir --upgrade uv
 fi
 
-# PyTorch's CUDA 13 image uses dist-packages; several wheel build scripts look
+# PyTorch images use dist-packages; several wheel build scripts look
 # for site-packages explicitly.
 ln -sfn /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/site-packages || true
 
@@ -249,14 +253,14 @@ if [ ! -f /etc/apt/preferences.d/cuda-repository-pin-600 ]; then
 fi
 
 apt-get install -y --no-install-recommends --allow-change-held-packages \
-    cuda-toolkit=13.0.2-1 \
-    cublasmp-cuda-13=0.8.0.2023-1 \
-    libcudnn9-cuda-13=9.19.0.56-1 \
-    libcudnn9-dev-cuda-13=9.19.0.56-1 \
-    libcudnn9-headers-cuda-13=9.19.0.56-1 \
-    libnccl2=2.29.3-1+cuda13.1 \
-    libnccl-dev=2.29.3-1+cuda13.1 \
-    nvshmem-cuda-13
+    "${CUDA_TOOLKIT_APT_SPEC}" \
+    "${CUDA_CUBLASMP_APT_SPEC}" \
+    "libcudnn9-cuda-${CUDA_MAJOR}=9.19.0.56-1" \
+    "libcudnn9-dev-cuda-${CUDA_MAJOR}=9.19.0.56-1" \
+    "libcudnn9-headers-cuda-${CUDA_MAJOR}=9.19.0.56-1" \
+    "libnccl2=${CUDA_NCCL_APT_SPEC}" \
+    "libnccl-dev=${CUDA_NCCL_APT_SPEC}" \
+    "nvshmem-cuda-${CUDA_MAJOR}"
 
 rm -rf /var/lib/apt/lists/*
 
@@ -275,21 +279,54 @@ fi
 
 if python_dist_ok vllm; then
     echo "Skipping vLLM wheel install; vllm is already installed."
+elif [ "${CUDA_MAJOR}" = "12" ] && [ "${VLLM_BUILD_FROM_SOURCE}" = "1" ]; then
+    if try_download_hf_wheel \
+        "${VLLM_PREBUILT_WHEEL_REPO}" \
+        "${VLLM_PREBUILT_WHEEL_FILE}" \
+        "${VLLM_PREBUILT_WHEEL_PATH}"; then
+        uv pip install --system --no-cache-dir \
+            --index-strategy unsafe-best-match \
+            --extra-index-url "${PYTORCH_INDEX_URL}" \
+            --extra-index-url "${FLASHINFER_INDEX_URL}" \
+            "torch==$(python -c 'import torch; print(torch.__version__)')" \
+            "${VLLM_PREBUILT_WHEEL_PATH}"
+    else
+        echo "No ${CUDA_KERNEL_WHEEL_TAG} vLLM wheel found; building it from pinned source."
+        CUDA_VERSION="${CUDA_VERSION}" \
+        VLLM_INSTALL_WHEEL=1 \
+        VLLM_UPLOAD_WHEEL=0 \
+        VLLM_REUSE_PREBUILT=0 \
+        bash "${SCRIPT_DIR}/build_vllm_wheel.sh"
+    fi
+elif [ "${CUDA_MAJOR}" = "12" ]; then
+    echo "Installing published vLLM wheel; source build is disabled (VLLM_BUILD_FROM_SOURCE=${VLLM_BUILD_FROM_SOURCE})."
+    uv pip install --system --no-cache-dir --no-build-isolation \
+        --index-strategy unsafe-best-match \
+        --extra-index-url "${PYTORCH_INDEX_URL}" \
+        --extra-index-url "https://download.pytorch.org/whl/cu129" \
+        --extra-index-url "${FLASHINFER_INDEX_URL}" \
+        --extra-index-url "${VLLM_CU129_NIGHTLY_INDEX_URL}" \
+        "torch==$(python -c 'import torch; print(torch.__version__)')" \
+        "${VLLM_WHEEL_URL}"
 else
     uv pip install --system --no-cache-dir --no-build-isolation \
+        --index-strategy unsafe-best-match \
+        --extra-index-url "${PYTORCH_INDEX_URL}" \
+        --extra-index-url "${FLASHINFER_INDEX_URL}" \
+        "torch==$(python -c 'import torch; print(torch.__version__)')" \
         "${VLLM_WHEEL_URL}"
 fi
 
 uv pip install --system --no-cache-dir \
-    "cuda-python[all]==${CUDA_VERSION}" \
+    "cuda-python[all]==${CUDA_PYTHON_VERSION}" \
     "cuda-toolkit[all]==${CUDA_VERSION}" \
-    nvidia-cublasmp-cu13==0.8.0.2023 \
-    nvidia-cuda-cccl \
-    nvidia-cuda-runtime-cu12 \
+    "${NVIDIA_CUBLASMP_DIST}==${CUDA_CUBLASMP_VERSION}" \
+    "${NVIDIA_CUDA_CCCL_DIST}" \
+    "${NVIDIA_CUDA_RUNTIME_DIST}" \
     nvidia-cudnn-frontend==1.24.0 \
     "${NVIDIA_CUTLASS_DSL_SPEC}" \
     nvidia-ml-py \
-    nvshmem4py-cu13
+    "${NVSHMEM4PY_DIST}"
 
 # TileLang currently pulls an apache-tvm-ffi build that can collide with
 # mamba-ssm/ModelOpt imports at runtime. Keep the older FFI ABI pinned until
@@ -301,8 +338,8 @@ if python_module_ok flashinfer; then
 else
     uv pip install --system --no-cache-dir \
         --extra-index-url "${FLASHINFER_INDEX_URL}" \
-        flashinfer-python==0.6.12 \
-        flashinfer-cubin==0.6.12 \
+        flashinfer-python==0.6.13 \
+        flashinfer-cubin==0.6.13 \
         lmcache \
         mooncake-transfer-engine
 fi
@@ -340,12 +377,17 @@ if [ "${INSTALL_TRANSFORMER_ENGINE}" = "1" ]; then
     if python_module_ok transformer_engine.pytorch; then
         echo "Skipping Transformer Engine install; transformer_engine.pytorch is already importable."
     else
-        try_download_hf_wheel \
+        if try_download_hf_wheel \
             "${TRANSFORMER_ENGINE_WHEEL_REPO}" \
             "${TRANSFORMER_ENGINE_WHEEL_FILE}" \
-            "${TRANSFORMER_ENGINE_WHEEL_PATH}"
-        uv pip install --system --compile-bytecode --no-cache-dir \
-            "${TRANSFORMER_ENGINE_WHEEL_PATH}"
+            "${TRANSFORMER_ENGINE_WHEEL_PATH}"; then
+            uv pip install --system --compile-bytecode --no-cache-dir \
+                "${TRANSFORMER_ENGINE_WHEEL_PATH}"
+        else
+            echo "Installing Transformer Engine fallback for ${CUDA_WHEEL_TAG}: ${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
+            uv pip install --system --compile-bytecode --no-cache-dir \
+                "${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
+        fi
     fi
 else
     echo "Skipping Transformer Engine install because INSTALL_TRANSFORMER_ENGINE=${INSTALL_TRANSFORMER_ENGINE}."
@@ -509,10 +551,10 @@ fi
 
 # Keep the NCCL Python wheel aligned with the apt NCCL used by the tested
 # modal_simp image and by the OLMo-core FP8/AdamW8bit probes.
-if python_dist_ok nvidia-nccl-cu13 2.29.3; then
-    echo "Skipping nvidia-nccl-cu13 install; version 2.29.3 is already installed."
+if python_dist_ok "${NVIDIA_NCCL_DIST}" 2.29.3; then
+    echo "Skipping ${NVIDIA_NCCL_DIST} install; version 2.29.3 is already installed."
 else
-    uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
+    uv pip install --system --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
 fi
 
 # Re-pin nvidia-cutlass-dsl to vLLM's own ==4.5.2 LAST. flashinfer / quack / flash-attn-4 pull it
@@ -522,7 +564,7 @@ fi
 if python_dist_ok nvidia-cutlass-dsl 4.5.2; then
     echo "Skipping nvidia-cutlass-dsl re-pin; version 4.5.2 is already installed."
 else
-    uv pip install --system --no-cache-dir "nvidia-cutlass-dsl[cu13]==4.5.2"
+    uv pip install --system --no-cache-dir "${NVIDIA_CUTLASS_DSL_SPEC}"
 fi
 
 verify_modules=(flash_attn flashinfer vllm)

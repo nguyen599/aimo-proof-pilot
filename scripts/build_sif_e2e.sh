@@ -14,10 +14,18 @@ SIF_PATH="${SIF_PATH:-${OUT_DIR}/${SIF_NAME}}"
 LOG_PATH="${LOG_PATH:-${LOG_DIR}/${SIF_NAME%.sif}.build.log}"
 NOTEST="${NOTEST:-0}"
 VERIFY="${VERIFY:-1}"
+CUDA_VERSION="${CUDA_VERSION:-}"
+SIF_BASE_IMAGE="${SIF_BASE_IMAGE:-}"
 
 mkdir -p "${OUT_DIR}" "${LOG_DIR}" "${CACHE_DIR}" "${TMP_DIR}"
 
 build_args=(build --force)
+if [ -n "${CUDA_VERSION}" ]; then
+    build_args+=(--build-arg "CUDA_VERSION=${CUDA_VERSION}")
+fi
+if [ -n "${SIF_BASE_IMAGE}" ]; then
+    build_args+=(--build-arg "BASE_IMAGE=${SIF_BASE_IMAGE}")
+fi
 if [ "${NOTEST}" = "1" ]; then
     build_args+=(--notest)
 fi

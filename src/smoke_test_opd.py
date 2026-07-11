@@ -5,7 +5,7 @@ Run at startup to confirm the box is configured for an OPD run. It does NOT impo
 stack; it checks the environment the run depends on:
 
   * distributed env vars set     (WORLD_SIZE, GLOBAL_RANK, MASTER_ADDR, MASTER_PORT)
-  * host driver supports CUDA 13.0  (cu130)
+  * host driver supports the configured CUDA_VERSION
   * /tmp and $HOME are writable
   * creds present               (WANDB_API_KEY, GITHUB_TOKEN, HF_TOKEN)
   * enough free disk
@@ -27,6 +27,12 @@ MIN_FREE_GB = float(os.environ.get("OPD_MIN_FREE_GB", "1000"))   # /tmp should h
 DIST_VARS = ["WORLD_SIZE", "GLOBAL_RANK", "MASTER_ADDR", "MASTER_PORT"]
 CRED_VARS = ["WANDB_API_KEY", "GITHUB_TOKEN", "HF_TOKEN"]
 DISK_DIRS = ["/tmp", os.path.expanduser("~")]
+CUDA_VERSION = os.environ.get("CUDA_VERSION", "13.0.2")
+CUDA_VERSION_MATCH = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", CUDA_VERSION)
+if CUDA_VERSION_MATCH is None:
+    raise ValueError(f"CUDA_VERSION must use MAJOR.MINOR.PATCH format, got {CUDA_VERSION!r}")
+REQUIRED_CUDA = (int(CUDA_VERSION_MATCH.group(1)), int(CUDA_VERSION_MATCH.group(2)))
+CUDA_WHEEL_TAG = f"cu{REQUIRED_CUDA[0]}{REQUIRED_CUDA[1]}"
 
 
 def record(name: str, status: str, msg: str = "") -> None:
@@ -50,7 +56,7 @@ def c_dist_env() -> tuple[str, str]:
     return PASS, " ".join(f"{v}={os.environ[v]}" for v in DIST_VARS)
 
 
-def c_cu130() -> tuple[str, str]:
+def c_cuda_driver() -> tuple[str, str]:
     p = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=30)
     if p.returncode != 0:
         return FAIL, "nvidia-smi failed (no GPU / driver / --gpus,--nv missing?)"
@@ -58,8 +64,9 @@ def c_cu130() -> tuple[str, str]:
     if not m:
         return WARN, "could not parse 'CUDA Version' from nvidia-smi"
     major, minor = int(m.group(1)), int(m.group(2))
-    ok = (major, minor) >= (13, 0)
-    return (PASS if ok else FAIL), f"driver supports CUDA {major}.{minor} (need >= 13.0 for cu130)"
+    ok = (major, minor) >= REQUIRED_CUDA
+    required = f"{REQUIRED_CUDA[0]}.{REQUIRED_CUDA[1]}"
+    return (PASS if ok else FAIL), f"driver supports CUDA {major}.{minor} (need >= {required} for {CUDA_WHEEL_TAG})"
 
 
 def c_writable() -> tuple[str, str]:
@@ -100,7 +107,7 @@ def main() -> int:
     print("\nChecks:")
     checks = [
         ("distributed env vars", c_dist_env, True),
-        ("cu130 driver support", c_cu130, True),
+        (f"{CUDA_WHEEL_TAG} driver support", c_cuda_driver, True),
         ("/tmp + $HOME writable", c_writable, True),
         ("creds set (wandb/gh/hf)", c_creds, True),
         ("free disk", c_disk, False),

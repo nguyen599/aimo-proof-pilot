@@ -37,6 +37,24 @@ def _load_env_file() -> None:
 _load_env_file()
 
 
+def configured_cuda_version() -> tuple[str, int, int]:
+    value = os.environ.get("CUDA_VERSION", "13.0.2").strip()
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", value)
+    if match is None:
+        raise ValueError(f"CUDA_VERSION must use MAJOR.MINOR.PATCH format, got {value!r}")
+    return value, int(match.group(1)), int(match.group(2))
+
+
+DEFAULT_CUDA_VERSION, DEFAULT_CUDA_MAJOR, DEFAULT_CUDA_MINOR = configured_cuda_version()
+DEFAULT_CUDA_WHEEL_TAG = f"cu{DEFAULT_CUDA_MAJOR}{DEFAULT_CUDA_MINOR}"
+DEFAULT_CUDA_PACKAGE_FAMILY = f"cu{DEFAULT_CUDA_MAJOR}"
+DEFAULT_CUDA_KERNEL_WHEEL_TAG = {
+    (12, 8): "cu128",
+    (12, 9): "cu128",
+    (13, 0): "cu130",
+}.get((DEFAULT_CUDA_MAJOR, DEFAULT_CUDA_MINOR), DEFAULT_CUDA_WHEEL_TAG)
+
+
 DEFAULT_SUBMISSIONS_REPO = "https://github.com/nguyen599/aimo-proof-pilot.git"
 DEFAULT_OPEN_INSTRUCT_REPO = "https://github.com/nguyen599/open-instruct.git"
 DEFAULT_OLMO_CORE_REPO = "https://github.com/nguyen599/OLMo-core.git"
@@ -62,10 +80,13 @@ DEFAULT_PRIME_RL_RUNTIME_DIR = "/tmp/prime-rl-runtime"
 DEFAULT_RUNTIME_FETCH_STATE_DIR = "/tmp/train-runtime-fetch"
 DEFAULT_RUNTIME_TRAINING_DEPS_DIR = "/tmp/olmo-train-runtime-deps"
 DEFAULT_APEX_WHEEL_REPO = "nguyen599/prebuild-wheels-util"
-DEFAULT_APEX_WHEEL_FILE = "torch2.11+cu130/apex-0.1-cp312-cp312-linux_x86_64.whl"
+DEFAULT_APEX_WHEEL_FILE = (
+    f"torch2.11+{DEFAULT_CUDA_KERNEL_WHEEL_TAG}/apex-0.1-cp312-cp312-linux_x86_64.whl"
+)
 DEFAULT_TRANSFORMER_ENGINE_WHEEL_REPO = "nguyen599/prebuild-wheels-util"
 DEFAULT_TRANSFORMER_ENGINE_WHEEL_FILE = (
-    "torch2.11+cu130/transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl"
+    f"torch2.11+{DEFAULT_CUDA_KERNEL_WHEEL_TAG}/"
+    "transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl"
 )
 DEFAULT_RUNTIME_FETCH_TIMEOUT_SECONDS = 1800.0
 DEFAULT_RUNTIME_FETCH_POLL_SECONDS = 2.0
@@ -81,11 +102,17 @@ DEFAULT_RUNTIME_PIP_RETRIES = 12
 DEFAULT_RUNTIME_PIP_TIMEOUT_SECONDS = 120.0
 DEFAULT_RUN_DIR_MARKER_TIMEOUT_SECONDS = 300.0
 DEFAULT_RUN_DIR_MARKER_POLL_SECONDS = 0.5
-DEFAULT_GRPO_RUNTIME_VLLM_VERSION = "0.23.1rc1.dev699+gf5a8d7337"
-DEFAULT_GRPO_RUNTIME_VLLM_CUDA_VERSION = "130"
+DEFAULT_GRPO_RUNTIME_VLLM_VERSION = (
+    "0.23.1rc1.dev699+gf5a8d7337" if DEFAULT_CUDA_MAJOR == 13 else ""
+)
+DEFAULT_GRPO_RUNTIME_VLLM_CUDA_VERSION = DEFAULT_CUDA_WHEEL_TAG.removeprefix("cu")
 DEFAULT_VLLM_RUNTIME_WHEEL_URL = (
-    "https://wheels.vllm.ai/f5a8d73377d0f0a4e00cba172f9fbd0d50471b07/"
-    "vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl"
+    (
+        "https://wheels.vllm.ai/f5a8d73377d0f0a4e00cba172f9fbd0d50471b07/"
+        "vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl"
+    )
+    if DEFAULT_CUDA_MAJOR == 13
+    else ""
 )
 DEFAULT_GRPO_RUNTIME_REQUIREMENTS = (
     "openenv-core==0.2.1",
@@ -140,7 +167,13 @@ DEFAULT_RLCSD_RUNTIME_REQUIREMENTS = (
     "opencensus-context==0.1.3",
     "orjson",
     "packaging==25.0",
-    f"vllm=={DEFAULT_GRPO_RUNTIME_VLLM_VERSION}",
+    # CUDA 12 images use the private source-built vLLM from the base image.
+    # Do not ask the per-run overlay to resolve a nonexistent public cu128 wheel.
+    *(
+        (f"vllm=={DEFAULT_GRPO_RUNTIME_VLLM_VERSION}",)
+        if DEFAULT_GRPO_RUNTIME_VLLM_VERSION
+        else ()
+    ),
     "gguf>=0.17.0",
     "pyarrow>=19.0.0",
     "py-spy==0.4.2",
@@ -167,9 +200,9 @@ DEFAULT_VERL_AUTOMODEL_RUNTIME_REQUIREMENTS = (
     "nemo-automodel==0.4.0",
 )
 DEFAULT_VERL_NVIDIA_RUNTIME_REQUIREMENTS = (
-    # cublasmp in the current CUDA 13 / Transformer Engine stack needs the
+    # cublasmp in the current CUDA / Transformer Engine stack needs the
     # ncclCommQueryProperties symbol, which is present in NCCL 2.29.3.
-    "nvidia-nccl-cu13==2.29.3",
+    f"nvidia-nccl-{DEFAULT_CUDA_PACKAGE_FAMILY}==2.29.3",
 )
 DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS = (
     # pip does not understand prime-rl's [tool.uv.sources], so direct source
@@ -1048,7 +1081,7 @@ def enable_system_nccl_preload_for_wrapper() -> None:
 def prepend_runtime_library_path(site_dir: Path) -> None:
     prepend_ld_library_path(
         site_dir / "nvidia" / "nccl" / "lib",
-        site_dir / "nvidia" / "cublasmp" / "cu13" / "lib",
+        site_dir / "nvidia" / "cublasmp" / DEFAULT_CUDA_PACKAGE_FAMILY / "lib",
     )
 
 
@@ -1605,7 +1638,7 @@ def runtime_dependency_env(site_dir: Path, megatron_dir: Path) -> dict[str, str]
     library_parts = [
         system_nccl_path.parent if system_nccl_path else None,
         site_dir / "nvidia" / "nccl" / "lib",
-        site_dir / "nvidia" / "cublasmp" / "cu13" / "lib",
+        site_dir / "nvidia" / "cublasmp" / DEFAULT_CUDA_PACKAGE_FAMILY / "lib",
     ]
     existing_library_path = env.get("LD_LIBRARY_PATH")
     if existing_library_path:

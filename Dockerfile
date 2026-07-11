@@ -1,10 +1,14 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BASE_IMAGE=pytorch/pytorch:2.11.0-cuda13.0-cudnn9-devel
+ARG CUDA_VERSION=12.8.1
+ARG CUDA_BASE_IMAGE_VERSION=12.8
+ARG BASE_IMAGE=pytorch/pytorch:2.11.0-cuda${CUDA_BASE_IMAGE_VERSION}-cudnn9-devel
 FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+ARG CUDA_VERSION
+ARG CUDA_BASE_IMAGE_VERSION
 ARG OPEN_INSTRUCT_REF=main
 ARG OLMO_CORE_REF=main
 ARG SUBMISSION_REPO=https://github.com/nguyen599/aimo-proof-pilot.git
@@ -21,10 +25,13 @@ ARG INSTALL_FLASH_ATTN_4=1
 ARG INSTALL_TRANSFORMER_ENGINE=1
 ARG INSTALL_MEGATRON_CORE=1
 ARG INSTALL_LIGER_KERNEL=1
+ARG VLLM_BUILD_FROM_SOURCE=0
 ARG GITHUB_TOKEN=""
 ARG HF_TOKEN=""
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    CUDA_VERSION=${CUDA_VERSION} \
+    CUDA_BASE_IMAGE_VERSION=${CUDA_BASE_IMAGE_VERSION} \
     UV_BREAK_SYSTEM_PACKAGES=1 \
     GIT_LFS_SKIP_SMUDGE=1 \
     SUBMISSIONS_REPO=${SUBMISSION_REPO} \
@@ -95,6 +102,7 @@ RUN --mount=type=secret,id=github_token,required=false \
     if [ -n "${GITHUB_TOKEN}" ]; then \
         git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
     fi; \
+    CUDA_VERSION="${CUDA_VERSION}" \
     OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF}" \
     OLMO_CORE_REF="${OLMO_CORE_REF}" \
     INSTALL_MODAL_SIMP_EXTRAS="${INSTALL_MODAL_SIMP_EXTRAS}" \
@@ -108,6 +116,7 @@ RUN --mount=type=secret,id=github_token,required=false \
     INSTALL_TRANSFORMER_ENGINE="${INSTALL_TRANSFORMER_ENGINE}" \
     INSTALL_MEGATRON_CORE="${INSTALL_MEGATRON_CORE}" \
     INSTALL_LIGER_KERNEL="${INSTALL_LIGER_KERNEL}" \
+    VLLM_BUILD_FROM_SOURCE="${VLLM_BUILD_FROM_SOURCE}" \
     bash /app/install_training_deps.sh; \
     git config --global --unset-all url."https://${GITHUB_TOKEN}@github.com/".insteadOf || true
 
@@ -147,7 +156,7 @@ announce() {
     printf '============================================================\n\n'
 }
 announce "STARTING"
-# One-shot preflight smoke test (env/system checks: distributed env vars, cu130 driver, /tmp+$HOME
+# One-shot preflight smoke test (env/system checks: distributed env vars, CUDA driver, /tmp+$HOME
 # writable, creds, disk). Its PASS/WARN/FAIL report goes to STDOUT + the daemon log, so it's visible
 # via `docker logs` / the control panel at boot. It does NOT gate the daemon — the daemon must stay up
 # for remote control even if a check FAILs (so you can fix + relaunch remotely).

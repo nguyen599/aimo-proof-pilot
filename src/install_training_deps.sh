@@ -5,12 +5,16 @@ export DEBIAN_FRONTEND=noninteractive
 export UV_BREAK_SYSTEM_PACKAGES=1
 export GIT_LFS_SKIP_SMUDGE=1
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CUDA_CONFIG_FILE="${CUDA_CONFIG_FILE:-${SCRIPT_DIR}/cuda_config.sh}"
+# shellcheck source=src/cuda_config.sh
+source "${CUDA_CONFIG_FILE}"
+
 APP_DIR="${APP_DIR:-/app}"
 REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-${APP_DIR}/requirements.txt}"
 INSTALL_SINGULARITY_CE="${INSTALL_SINGULARITY_CE:-0}"
 INSTALL_APPTAINER_IN_IMAGE="${INSTALL_APPTAINER_IN_IMAGE:-0}"
 INSTALL_MODAL_SIMP_EXTRAS="${INSTALL_MODAL_SIMP_EXTRAS:-0}"
-TORCHAO_INDEX_URL="${TORCHAO_INDEX_URL:-https://download.pytorch.org/whl/nightly/cu130}"
 
 OPEN_INSTRUCT_REPO="${OPEN_INSTRUCT_REPO:-https://github.com/nguyen599/open-instruct.git}"
 OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF:-main}"
@@ -19,6 +23,24 @@ OPEN_INSTRUCT_DIR="${OPEN_INSTRUCT_DIR:-/opt/open-instruct}"
 OLMO_CORE_REPO="${OLMO_CORE_REPO:-https://github.com/nguyen599/OLMo-core.git}"
 OLMO_CORE_REF="${OLMO_CORE_REF:-main}"
 OLMO_CORE_DIR="${OLMO_CORE_DIR:-/opt/OLMo-core}"
+
+install_selected_nccl_wheel() {
+    if python - "${NVIDIA_NCCL_DIST}" >/dev/null 2>&1 <<'PY'
+import sys
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    installed = version(sys.argv[1])
+except PackageNotFoundError:
+    raise SystemExit(1)
+raise SystemExit(0 if installed == "2.29.3" else 1)
+PY
+    then
+        echo "Skipping ${NVIDIA_NCCL_DIST} install; version 2.29.3 is already installed."
+    else
+        uv pip install --system --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
+    fi
+}
 
 apt-get update
 apt-get install -y --no-install-recommends \
@@ -52,13 +74,7 @@ uv pip install --system --no-cache-dir -r "${REQUIREMENTS_FILE}"
 # time because several registry entries omit revision/version metadata.
 uv pip uninstall --system kernels || true
 uv pip install --system --no-cache-dir --no-deps ring-flash-attn==0.1.8
-if python - <<'PY'
-import torch
-raise SystemExit(0 if str(torch.version.cuda or "").startswith("13.") else 1)
-PY
-then
-    uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
-fi
+install_selected_nccl_wheel
 
 if [ "${INSTALL_MODAL_SIMP_EXTRAS}" = "1" ]; then
     bash "${APP_DIR}/install_modal_simp_extras.sh"
@@ -130,10 +146,4 @@ PY
 # torch ABI. torchao treats mslk as optional, but its presence can make
 # `import torchao` fail, so remove it in the OLMo training layer.
 uv pip uninstall --system mslk || true
-if python - <<'PY'
-import torch
-raise SystemExit(0 if str(torch.version.cuda or "").startswith("13.") else 1)
-PY
-then
-    uv pip install --system --no-cache-dir --no-deps nvidia-nccl-cu13==2.29.3
-fi
+install_selected_nccl_wheel
