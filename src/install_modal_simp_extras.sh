@@ -389,6 +389,16 @@ if [ "${INSTALL_TRANSFORMER_ENGINE}" = "1" ]; then
                 "${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
         fi
     fi
+    transformer_engine_version="$(python -c 'from importlib.metadata import version; print(version("transformer-engine"))')"
+    if [ "${CUDA_MAJOR}" = "12" ]; then
+        uv pip uninstall --system transformer-engine-cu13 || true
+        uv pip install --system --compile-bytecode --no-cache-dir \
+            "transformer-engine-cu12==${transformer_engine_version}"
+    else
+        uv pip uninstall --system transformer-engine-cu12 || true
+        uv pip install --system --compile-bytecode --no-cache-dir \
+            "transformer-engine-cu13==${transformer_engine_version}"
+    fi
 else
     echo "Skipping Transformer Engine install because INSTALL_TRANSFORMER_ENGINE=${INSTALL_TRANSFORMER_ENGINE}."
 fi

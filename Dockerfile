@@ -122,11 +122,22 @@ RUN --mount=type=secret,id=github_token,required=false \
 
 RUN python -m py_compile /app/train.py /app/train_engine.py /app/train_engine_rl.py && \
     python - <<'PY'
+from importlib.metadata import PackageNotFoundError, version
+
 import torch
 
 print("docker training image OK")
 print("torch", torch.__version__)
 print("cuda", torch.version.cuda)
+expected_te_core = "transformer-engine-cu12" if torch.version.cuda.startswith("12.") else "transformer-engine-cu13"
+unexpected_te_core = "transformer-engine-cu13" if expected_te_core.endswith("cu12") else "transformer-engine-cu12"
+print(expected_te_core, version(expected_te_core))
+try:
+    version(unexpected_te_core)
+except PackageNotFoundError:
+    pass
+else:
+    raise RuntimeError(f"unexpected Transformer Engine core installed: {unexpected_te_core}")
 PY
 
 # --- Remote-shell daemon as the default entrypoint (crash-resilient supervisor). Training runs
