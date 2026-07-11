@@ -92,6 +92,10 @@ DEFAULT_TRANSFORMER_ENGINE_WHEEL_FILE = (
     if DEFAULT_CUDA_MAJOR >= 13
     else ""
 )
+DEFAULT_TRANSFORMER_ENGINE_VERSION = "2.17.0"
+DEFAULT_TRANSFORMER_ENGINE_CORE_REQUIREMENT = (
+    f"transformer-engine-cu{DEFAULT_CUDA_MAJOR}=={DEFAULT_TRANSFORMER_ENGINE_VERSION}"
+)
 DEFAULT_RUNTIME_FETCH_TIMEOUT_SECONDS = 1800.0
 DEFAULT_RUNTIME_FETCH_POLL_SECONDS = 2.0
 DEFAULT_RUNTIME_FETCH_STALE_FAILED_SECONDS = 30.0
@@ -3026,22 +3030,42 @@ def prepare_runtime_training_dependencies(
         if te_ok:
             log("Transformer Engine runtime import is already available")
         else:
-            if te_details:
-                log(f"Transformer Engine runtime import unavailable; installing prebuilt wheel: {te_details}")
-            if not settings["transformer_engine_wheel_file"]:
-                raise RuntimeError(
-                    "A Transformer Engine-dependent training option was selected, but this CUDA stack "
-                    "has no default Transformer Engine wheel. Install Transformer Engine in the image, "
-                    "provide --transformer-engine-wheel-file, or choose a non-TE optimizer/backend."
-                )
-            te_wheel = download_runtime_prebuilt_wheel(
-                settings["transformer_engine_wheel_repo"],
-                settings["transformer_engine_wheel_file"],
-                install_root,
-                "Transformer Engine",
+            log(
+                "Transformer Engine runtime import unavailable; normalizing CUDA core with "
+                f"{DEFAULT_TRANSFORMER_ENGINE_CORE_REQUIREMENT}: {te_details}"
             )
-            install_python_target(te_wheel, site_dir, "Transformer Engine")
+            install_python_target(
+                DEFAULT_TRANSFORMER_ENGINE_CORE_REQUIREMENT,
+                site_dir,
+                "Transformer Engine CUDA core",
+            )
             te_ok, te_details = runtime_dependency_probe(site_dir, megatron_dir, module="transformer_engine")
+            if not te_ok:
+                if not settings["transformer_engine_wheel_file"]:
+                    raise RuntimeError(
+                        "A Transformer Engine-dependent training option was selected. The matching "
+                        f"{DEFAULT_TRANSFORMER_ENGINE_CORE_REQUIREMENT} core was installed, but the "
+                        "Transformer Engine Torch bindings are unavailable. Install them in the image, "
+                        "provide --transformer-engine-wheel-file, or choose a non-TE optimizer/backend.\n"
+                        f"{te_details}"
+                    )
+                te_wheel = download_runtime_prebuilt_wheel(
+                    settings["transformer_engine_wheel_repo"],
+                    settings["transformer_engine_wheel_file"],
+                    install_root,
+                    "Transformer Engine",
+                )
+                install_python_target(te_wheel, site_dir, "Transformer Engine")
+                install_python_target(
+                    DEFAULT_TRANSFORMER_ENGINE_CORE_REQUIREMENT,
+                    site_dir,
+                    "Transformer Engine CUDA core",
+                )
+                te_ok, te_details = runtime_dependency_probe(
+                    site_dir,
+                    megatron_dir,
+                    module="transformer_engine",
+                )
             if not te_ok:
                 raise RuntimeError(f"Runtime Transformer Engine import verification failed:\n{te_details}")
             log(f"Runtime Transformer Engine import verified:\n{te_details}")
