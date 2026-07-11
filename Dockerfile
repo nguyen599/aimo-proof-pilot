@@ -165,7 +165,7 @@ if [ -f /app/smoke_test_opd.py ]; then
 fi
 while :; do
     announce "RUNNING (daemon (re)starting)"
-    /usr/bin/python3 /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
+    python /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
     printf '[supervisor %s] daemon exited — restart in 5s\n' "$(date -u '+%F %T' 2>/dev/null)" | tee -a "$LOG"
     sleep 5 2>/dev/null || true
 done
