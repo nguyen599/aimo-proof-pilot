@@ -276,6 +276,7 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
                 "refine_rounds": refine_rounds,
                 "refine_review_n": args.prime_proof_refine_review_n,
                 "refine_early_stop_reward": args.prime_proof_refine_early_stop_reward,
+                "selector_top_k": args.prime_proof_selector_top_k,
             },
         }
 
@@ -1107,6 +1108,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_proof_refine_review_n", type=int, default=2)
     parser.add_argument("--prime_proof_refine_reward_mode", default="selected", choices=("selected", "best", "final"))
     parser.add_argument("--prime_proof_refine_early_stop_reward", type=float, default=0.95)
+    parser.add_argument("--prime_proof_selector_top_k", type=int, default=3)
     parser.add_argument("--prime_eval_verifiable_dataset_path", default=None)
     parser.add_argument("--prime_eval_name", default="proof_math_verifiable")
     parser.add_argument("--prime_eval_interval", type=int, default=10)

@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from datasets import Dataset
-from openai import OpenAI
 
 import verifiers as vf
 
@@ -46,6 +45,10 @@ MAX_FORWARDED_META_ANALYSIS_CHARS = int(os.environ.get("PROOF_OPD_MAX_FORWARDED_
 MAX_WANDB_TRACE_TEXT_CHARS = 4_000_000
 HEADER_SUFFIX_PATTERN = r"(?:\s*//[^\n]*)?\s*$"
 BOXED_PATTERN = re.compile(r"\\boxed\s*\{([^{}]+)\}")
+SELECTED_ID_PATTERN = re.compile(
+    r"<selected_id>\s*(?:candidate\s*|[cr])?(\d+)\s*</selected_id>",
+    re.IGNORECASE,
+)
 DEFAULT_MIX_SEED = 34521
 VERIFIABLE_ANSWER_MATCH_METHOD_IDS = {
     "missing_prediction": 0.0,
@@ -187,6 +190,35 @@ Here is a solution sample along with correctness evaluation(s). Provide a better
 
 ## Final Instruction
 Your final response must follow the format above, including a `## Solution` section followed by a `## Self Evaluation` section."""
+
+
+def build_deepseek_selector_prompt(problem: str, selection_bundle: list[str]) -> str:
+    selection_bundle = "\n\n".join(
+        f"### Candidate {idx + 1}\n{candidate}" for idx, candidate in enumerate(selection_bundle)
+    )
+    return f"""===SYSTEM===
+You are choosing the final submission for an olympiad-style proof problem.
+
+You are given several candidate proofs, each with an ID. Do not solve from scratch and do not write any new mathematics. Decide which single candidate is most likely to be a complete and correct proof.
+
+Use this priority:
+1. Prefer a proof with no identified fatal gap.
+2. Prefer a proof whose key lemmas are explicitly proved.
+3. Prefer a proof that exactly proves the problem statement.
+4. If all complete-looking proofs have fatal gaps, choose the strongest rigorous partial proof.
+
+Output ONLY the XML format below -- no text outside the tag.
+===USER===
+Problem:
+{problem}
+
+Candidate proofs:
+{selection_bundle}
+
+Respond with ONLY the chosen candidate's ID:
+
+<selected_id>ID</selected_id>
+"""
 
 
 def parse_bool(value: str | bool | None, default: bool = False) -> bool:
@@ -367,6 +399,18 @@ def parse_generation_response(text: str) -> dict[str, Any]:
         "has_solution_section": has_solution,
         "has_self_evaluation_section": has_self_eval,
         "format_ok": bool(has_solution and proof and has_self_eval and self_score is not None),
+    }
+
+
+def parse_selector_response(text: str) -> dict[str, Any]:
+    visible = strip_reasoning_blocks(text)
+    matches = SELECTED_ID_PATTERN.findall(visible)
+    return {
+        "raw_output": text or "",
+        "raw_chars": len(text or ""),
+        "visible_output": visible,
+        "closed_thinking": has_closed_thinking(text),
+        "selected_id": int(matches[-1]) if matches else None,
     }
 
 
@@ -887,6 +931,7 @@ class ProofOPDRubric(vf.Rubric):
         self.add_metric(self.proof_opd_proof_score)
         self.add_metric(self.proof_opd_meta_score)
         self.add_metric(self.proof_opd_round_index)
+        self.add_metric(self.proof_opd_selector_valid)
 
     async def proof_opd_reward(self, state: Any, **_: Any) -> float:
         payload = state.get("proof_opd_reward_payload") if isinstance(state, dict) else None
@@ -903,6 +948,9 @@ class ProofOPDRubric(vf.Rubric):
 
     async def proof_opd_round_index(self, state: Any, **_: Any) -> float:
         return self._metric(state, "selected_round_index", -1.0)
+
+    async def proof_opd_selector_valid(self, state: Any, **_: Any) -> float:
+        return self._metric(state, "selector_valid")
 
     @staticmethod
     def _metric(state: Any, key: str, default: float = 0.0) -> float:
@@ -924,6 +972,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         enable_meta_verification: bool = True,
         partial_format_score: float = 0.7,
         refine_early_stop_reward: float = 0.95,
+        selector_top_k: int = 3,
         require_closed_think: bool | str = True,
         **kwargs: Any,
     ) -> None:
@@ -933,9 +982,10 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         self.enable_meta_verification = bool(enable_meta_verification)
         self.partial_format_score = clamp01(float(partial_format_score))
         self.refine_early_stop_reward = clamp01(float(refine_early_stop_reward))
+        self.selector_top_k = max(1, int(selector_top_k))
         self.require_closed_think = parse_bool(require_closed_think, True)
         turns_per_round = 1 + self.num_verifiers * (2 if self.enable_meta_verification else 1)
-        super().__init__(max_turns=turns_per_round * (self.refine_rounds + 1) + 1, **kwargs)
+        super().__init__(max_turns=turns_per_round * (self.refine_rounds + 1) + 2, **kwargs)
 
     async def setup_state(self, state: vf.State) -> None:
         state["proof_opd_stage"] = "proof"
@@ -945,6 +995,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         state["proof_opd_verify_index"] = 0
         state["proof_opd_verifier_results"] = []
         state["proof_opd_pending_verifier_result"] = None
+        state["proof_opd_selector_candidates"] = []
+        state["proof_opd_selector"] = None
         state["proof_opd_reward_payload"] = None
 
     def _input_value(self, state: vf.State, key: str) -> str:
@@ -1022,11 +1074,49 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             analyses.append("\n".join(parts).strip())
         return analyses
 
+    @staticmethod
+    def _selector_score(payload: dict[str, Any]) -> float:
+        format_score = float(payload.get("format_score", 0.0) or 0.0)
+        verifier_meta_reward = float(payload.get("verifier_meta_reward", 0.0) or 0.0)
+        return clamp01(format_score * verifier_meta_reward)
+
+    def _rank_selector_candidates(self, state: vf.State) -> list[dict[str, Any]]:
+        ranked: list[dict[str, Any]] = []
+        for round_list_index, payload in enumerate(state.get("proof_opd_rounds") or []):
+            proof = str(payload.get("proof") or "").strip()
+            if not proof or float(payload.get("format_score", 0.0) or 0.0) <= 0.0:
+                continue
+            ranked.append(
+                {
+                    "round_list_index": round_list_index,
+                    "round_index": int(payload.get("round_index", round_list_index)),
+                    "preselection_score": self._selector_score(payload),
+                    "format_score": clamp01(float(payload.get("format_score", 0.0) or 0.0)),
+                    "verifier_meta_reward": clamp01(
+                        float(payload.get("verifier_meta_reward", 0.0) or 0.0)
+                    ),
+                }
+            )
+        ranked.sort(
+            key=lambda candidate: (
+                float(candidate["preselection_score"]),
+                float(candidate["format_score"]),
+                float(candidate["verifier_meta_reward"]),
+                int(candidate["round_index"]),
+            ),
+            reverse=True,
+        )
+        top_candidates = ranked[: self.selector_top_k]
+        for candidate_id, candidate in enumerate(top_candidates, start=1):
+            candidate["candidate_id"] = candidate_id
+        return top_candidates
+
     def _build_wandb_trace(self, state: vf.State) -> dict[str, Any]:
         payload = dict(state.get("proof_opd_reward_payload") or {})
         generation = dict(state.get("proof_opd_generation") or {})
         verifier = dict(state.get("proof_opd_verifier") or {})
         meta = dict(state.get("proof_opd_meta") or {})
+        selector = dict(state.get("proof_opd_selector") or {})
         info = self._input_info(state)
         trace = {
             "task_id": info.get("task_id") or self._input_value(state, "task_id"),
@@ -1051,6 +1141,17 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "final_round_reward": payload.get("final_round_reward"),
             "best_round_reward": payload.get("best_round_reward"),
             "refine_rounds_used": payload.get("refine_rounds_used", 0),
+            "selector_top_k": payload.get("selector_top_k", self.selector_top_k),
+            "selector_valid": payload.get("selector_valid", False),
+            "selector_fallback_used": payload.get("selector_fallback_used", False),
+            "selector_invalid_reason": payload.get("selector_invalid_reason", ""),
+            "selector_selected_id": payload.get("selector_selected_id"),
+            "selector_selected_round_index": payload.get("selector_selected_round_index"),
+            "selector_selected_preselection_score": payload.get("selector_selected_preselection_score"),
+            "selector_candidates": payload.get(
+                "selector_candidates",
+                list(state.get("proof_opd_selector_candidates") or []),
+            ),
             "reason": payload.get("reason", ""),
             "finish_reason": payload.get("finish_reason", ""),
             "is_truncated": payload.get("is_truncated", False),
@@ -1068,7 +1169,9 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "verifier_invalid_reason": payload.get("verifier_invalid_reason", verifier.get("invalid_reason", "")),
             "meta_invalid_reason": payload.get("meta_invalid_reason", meta.get("invalid_reason", "")),
             "stage_records": payload.get("stage_records", list(state.get("proof_opd_stage_records") or [])),
-            "proof_raw_output_excerpt": clipped_trace_text(generation.get("raw_output", "")),
+            "proof_raw_output_excerpt": clipped_trace_text(
+                payload.get("generation_raw_output", generation.get("raw_output", ""))
+            ),
             "proof_excerpt": clipped_trace_text(payload.get("proof", generation.get("proof", ""))),
             "self_evaluation_excerpt": clipped_trace_text(
                 payload.get("self_evaluation", generation.get("self_evaluation", ""))
@@ -1079,6 +1182,12 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             ),
             "meta_raw_output_excerpt": clipped_trace_text(meta.get("raw_output", "")),
             "meta_analysis_excerpt": clipped_trace_text(payload.get("meta_analysis", meta.get("analysis", ""))),
+            "selector_raw_output_excerpt": clipped_trace_text(
+                payload.get("selector_raw_output", selector.get("raw_output", ""))
+            ),
+            "selector_visible_output": clipped_trace_text(
+                payload.get("selector_visible_output", selector.get("visible_output", ""))
+            ),
         }
         return trace
 
@@ -1114,6 +1223,23 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             return "missing_or_invalid_boxed_score"
         if not str(meta.get("analysis") or "").strip():
             return "empty_meta_analysis"
+        return ""
+
+    def _selector_invalid_reason(
+        self,
+        selector: dict[str, Any],
+        is_truncated: bool,
+        candidate_count: int,
+    ) -> str:
+        if is_truncated:
+            return "truncated_or_length_finish"
+        if self.require_closed_think and not selector.get("closed_thinking"):
+            return "missing_closed_think"
+        selected_id = selector.get("selected_id")
+        if selected_id is None:
+            return "missing_or_invalid_selected_id"
+        if not 1 <= int(selected_id) <= candidate_count:
+            return "selected_id_out_of_range"
         return ""
 
     def _invalid_generation_payload(
@@ -1236,7 +1362,93 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         selected["best_round_reward"] = float(rounds[best_idx].get("reward", 0.0) or 0.0)
         selected["refine_rounds_used"] = max(0, len(rounds) - 1)
         state["proof_opd_reward_payload"] = selected
-        LOGGER.info("Proof-OPD round scored: %s", json.dumps(selected, ensure_ascii=False)[:4000])
+        LOGGER.debug("Proof-OPD round scored: %s", json.dumps(selected, ensure_ascii=False)[:4000])
+        return selected
+
+    def _next_selector_prompt(self, state: vf.State) -> vf.Messages:
+        candidates = self._rank_selector_candidates(state)
+        state["proof_opd_selector_candidates"] = candidates
+        if not candidates:
+            payload = dict(state.get("proof_opd_reward_payload") or {})
+            payload.update(
+                {
+                    "selector_top_k": self.selector_top_k,
+                    "selector_candidates": [],
+                    "selector_valid": False,
+                    "selector_fallback_used": False,
+                    "selector_invalid_reason": "no_valid_candidates",
+                }
+            )
+            state["proof_opd_reward_payload"] = payload
+            return self._stop(state)
+
+        rounds = state.get("proof_opd_rounds") or []
+        selection_bundle = [
+            str(rounds[int(candidate["round_list_index"])].get("proof") or "").strip()
+            for candidate in candidates
+        ]
+        prompt = build_deepseek_selector_prompt(self._problem(state), selection_bundle)
+        log_llm_input("selector", prompt, state=state)
+        state["proof_opd_stage"] = "selector"
+        return [vf.UserMessage(content=prompt)]
+
+    def _finalize_selector(
+        self,
+        state: vf.State,
+        selector: dict[str, Any],
+        invalid_reason: str,
+        *,
+        is_truncated: bool = False,
+        finish_reason: str = "",
+    ) -> dict[str, Any]:
+        candidates = list(state.get("proof_opd_selector_candidates") or [])
+        if not candidates:
+            return dict(state.get("proof_opd_reward_payload") or {})
+
+        requested_id = selector.get("selected_id")
+        selected_id = int(requested_id) if not invalid_reason else int(candidates[0]["candidate_id"])
+        selected_candidate = next(
+            candidate for candidate in candidates if int(candidate["candidate_id"]) == selected_id
+        )
+        rounds = state.get("proof_opd_rounds") or []
+        selected = dict(rounds[int(selected_candidate["round_list_index"])])
+        selected["reward"] = self._selector_score(selected)
+        selected["selected_round_index"] = int(selected_candidate["round_index"])
+        selected["final_round_reward"] = self._selector_score(rounds[-1])
+        selected["best_round_reward"] = max(self._selector_score(payload) for payload in rounds)
+        selected["refine_rounds_used"] = max(0, len(rounds) - 1)
+        selected["selector_top_k"] = self.selector_top_k
+        selected["selector_candidates"] = candidates
+        selected["selector_valid"] = not bool(invalid_reason)
+        selected["selector_fallback_used"] = bool(invalid_reason)
+        selected["selector_invalid_reason"] = invalid_reason
+        selected["selector_requested_id"] = requested_id
+        selected["selector_selected_id"] = selected_id
+        selected["selector_selected_round_index"] = int(selected_candidate["round_index"])
+        selected["selector_selected_preselection_score"] = float(selected_candidate["preselection_score"])
+        selected["selector_raw_output"] = selector.get("raw_output", "")
+        selected["selector_visible_output"] = selector.get("visible_output", "")
+        selected["selector_closed_thinking"] = selector.get("closed_thinking", False)
+        selected["selector_is_truncated"] = is_truncated
+        selected["selector_finish_reason"] = finish_reason
+        selected["stage_records"] = list(state.get("proof_opd_stage_records") or [])
+
+        selector_state = dict(selector)
+        selector_state.update(
+            {
+                "valid": not bool(invalid_reason),
+                "invalid_reason": invalid_reason,
+                "fallback_used": bool(invalid_reason),
+                "requested_id": requested_id,
+                "selected_id": selected_id,
+                "selected_round_index": int(selected_candidate["round_index"]),
+                "is_truncated": is_truncated,
+                "finish_reason": finish_reason,
+            }
+        )
+        state["proof_opd_selector"] = selector_state
+        state["proof_opd_reward_payload"] = selected
+        LOGGER.info("Proof-OPD selector finalized: %s", json.dumps(selected, ensure_ascii=False)[:4000])
         return selected
 
     def _should_refine(self, state: vf.State, payload: dict[str, Any]) -> bool:
@@ -1294,7 +1506,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         payload = self._finalize_round(state)
         if self._should_refine(state, payload):
             return self._next_refinement_prompt(state, payload)
-        return self._stop(state)
+        return self._next_selector_prompt(state)
 
     async def env_response(self, messages: vf.Messages, state: vf.State, **_: Any) -> vf.Messages:
         return []
@@ -1330,6 +1542,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 state.setdefault("proof_opd_rounds", []).append(payload)
                 state["proof_opd_reward_payload"] = payload
                 LOGGER.info("Proof-OPD invalid generation: %s", json.dumps(payload, ensure_ascii=False))
+                if self._rank_selector_candidates(state):
+                    return self._next_selector_prompt(state)
                 return self._stop(state)
             payload = self._maybe_score_valid_generation_for_eval(
                 state,
@@ -1441,6 +1655,27 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             )
             self._append_verifier_result(state, result)
             return self._after_verifier_result(state)
+
+        if stage == "selector":
+            selector = parse_selector_response(text)
+            candidates = list(state.get("proof_opd_selector_candidates") or [])
+            invalid_reason = self._selector_invalid_reason(selector, is_truncated, len(candidates))
+            self._record_stage(
+                state,
+                stage="selector",
+                parsed=selector,
+                invalid_reason=invalid_reason,
+                is_truncated=is_truncated,
+                finish_reason=finish_reason,
+            )
+            self._finalize_selector(
+                state,
+                selector,
+                invalid_reason,
+                is_truncated=is_truncated,
+                finish_reason=finish_reason,
+            )
+            return self._stop(state)
 
         return self._stop(state)
 
@@ -1608,6 +1843,7 @@ def load_environment(
     refine_rounds: int = 1,
     refine_review_n: int = 2,
     refine_early_stop_reward: float = 0.95,
+    selector_top_k: int = 3,
     **_: Any,
 ) -> vf.Environment:
     proof_rows = read_dataset_rows(dataset_path)
@@ -1660,4 +1896,5 @@ def load_environment(
         partial_format_score=float(partial_format_score),
         require_closed_think=parse_bool(require_closed_think, True),
         refine_early_stop_reward=float(refine_early_stop_reward),
+        selector_top_k=int(selector_top_k),
     )

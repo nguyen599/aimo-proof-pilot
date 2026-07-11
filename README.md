@@ -145,6 +145,7 @@ Runtime workflow:
 5. If verifier output is valid, run a meta-verifier prompt over the verifier analysis.
 6. Compute `reward = format_score * verifier_score * meta_score`, clamped to `[0, 1]`.
 7. Optionally run a refinement round when the selected reward is below `--prime_proof_refine_early_stop_reward`.
+8. After refinement ends, rank the initial and refined proofs by `format_score * verifier_meta_reward`, send the best three (configurable with `--prime_proof_selector_top_k`) to a selector turn, and use the selected proof's score as the final environment reward. Invalid selector XML falls back to the highest pre-selector score.
 
 For verifiable training rows, the proof-generation prompt additionally asks the model to include one final answer in `\boxed{...}` inside the `## Solution` section. Train-time OPD reward still comes only from the proof/verifier/meta path. Boxed-answer accuracy is tracked through the separate eval dataset instead of the mixed train data.
 
@@ -162,6 +163,7 @@ Important W&B metrics:
 - `proof_opd_format_score`: format compliance score.
 - `proof_opd_proof_score`: verifier score.
 - `proof_opd_meta_score`: meta-verifier score.
+- `proof_opd_selector_valid`: `1` when the selector returned a valid in-range `<selected_id>`, otherwise `0` and the top pre-ranked proof is used.
 - Eval runs on the configured verifiable eval dataset report boxed-answer accuracy through eval reward / eval sample rows.
 
 ## Data Formats
