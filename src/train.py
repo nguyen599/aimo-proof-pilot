@@ -85,8 +85,12 @@ DEFAULT_APEX_WHEEL_FILE = (
 )
 DEFAULT_TRANSFORMER_ENGINE_WHEEL_REPO = "nguyen599/prebuild-wheels-util"
 DEFAULT_TRANSFORMER_ENGINE_WHEEL_FILE = (
-    f"torch2.11+{DEFAULT_CUDA_KERNEL_WHEEL_TAG}/"
-    "transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl"
+    (
+        f"torch2.11+{DEFAULT_CUDA_KERNEL_WHEEL_TAG}/"
+        "transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl"
+    )
+    if DEFAULT_CUDA_MAJOR >= 13
+    else ""
 )
 DEFAULT_RUNTIME_FETCH_TIMEOUT_SECONDS = 1800.0
 DEFAULT_RUNTIME_FETCH_POLL_SECONDS = 2.0
@@ -3024,6 +3028,12 @@ def prepare_runtime_training_dependencies(
         else:
             if te_details:
                 log(f"Transformer Engine runtime import unavailable; installing prebuilt wheel: {te_details}")
+            if not settings["transformer_engine_wheel_file"]:
+                raise RuntimeError(
+                    "A Transformer Engine-dependent training option was selected, but this CUDA stack "
+                    "has no default Transformer Engine wheel. Install Transformer Engine in the image, "
+                    "provide --transformer-engine-wheel-file, or choose a non-TE optimizer/backend."
+                )
             te_wheel = download_runtime_prebuilt_wheel(
                 settings["transformer_engine_wheel_repo"],
                 settings["transformer_engine_wheel_file"],
