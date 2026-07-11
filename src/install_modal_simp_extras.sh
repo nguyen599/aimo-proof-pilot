@@ -385,7 +385,7 @@ if [ "${INSTALL_TRANSFORMER_ENGINE}" = "1" ]; then
                 "${TRANSFORMER_ENGINE_WHEEL_PATH}"
         else
             echo "Installing Transformer Engine fallback for ${CUDA_WHEEL_TAG}: ${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
-            uv pip install --system --compile-bytecode --no-cache-dir \
+            uv pip install --system --compile-bytecode --no-cache-dir --no-build-isolation \
                 "${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
         fi
     fi
