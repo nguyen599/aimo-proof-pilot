@@ -542,11 +542,21 @@ else
     echo "Skipping Prime-RL dependency install because INSTALL_PRIME_RL_DEPS=${INSTALL_PRIME_RL_DEPS}."
 fi
 
-if python_dist_ok nvidia-resiliency-ext; then
-    echo "Skipping nvidia-resiliency-ext install; distribution is already installed."
+if python - <<'PY'
+from importlib.metadata import PackageNotFoundError, version
+from packaging.version import Version
+
+try:
+    installed = Version(version("nvidia-resiliency-ext"))
+except (PackageNotFoundError, ValueError):
+    raise SystemExit(1)
+raise SystemExit(0 if installed >= Version("0.6.0") else 1)
+PY
+then
+    echo "Skipping nvidia-resiliency-ext install; version 0.6.0 or newer is already installed."
 else
-    uv_pip install --no-cache-dir --no-build-isolation \
-        "git+https://github.com/NVIDIA/nvidia-resiliency-ext.git"
+    uv_pip install --no-cache-dir --no-build-isolation --upgrade \
+        "git+https://github.com/NVIDIA/nvidia-resiliency-ext.git@v0.6.0"
 fi
 
 if [ "${INSTALL_MEGATRON_CORE}" = "1" ]; then

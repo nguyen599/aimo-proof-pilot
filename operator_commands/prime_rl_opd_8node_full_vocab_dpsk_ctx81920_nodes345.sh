@@ -466,7 +466,11 @@ TOKEN_BATCH_SIZE=$((CTX_LEN * PACKED_SEQUENCES_PER_STEP))
 INFLIGHT_PER_POLICY_NODE="${PRIME_OPD_INFLIGHT_ROLLOUTS_PER_POLICY_NODE:-48}"
 DEFAULT_MAX_INFLIGHT=$((INFLIGHT_PER_POLICY_NODE * POLICY_NODE_COUNT))
 MAX_INFLIGHT="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-${DEFAULT_MAX_INFLIGHT}}"
-echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (${INFLIGHT_PER_POLICY_NODE}/policy_node; override PRIME_OPD_MAX_INFLIGHT_ROLLOUTS)"
+if [[ -n "${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-}" ]]; then
+  echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (explicit override)"
+else
+  echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (${INFLIGHT_PER_POLICY_NODE}/policy_node)"
+fi
 echo "[prime-opd-3node] candidate_gate group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT} proof_only=$((GROUP_SIZE - CANDIDATE_CONTINUE_COUNT))"
 echo "[prime-opd-3node] full-environment batching token_batch_size=${TOKEN_BATCH_SIZE} (${PACKED_SEQUENCES_PER_STEP} packed sequences x seq_len ${CTX_LEN})"
 MAX_OFF_POLICY="${PRIME_MAX_OFF_POLICY_STEPS:-24}"

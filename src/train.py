@@ -38,7 +38,18 @@ _load_env_file()
 
 
 def configured_cuda_version() -> tuple[str, int, int]:
-    value = os.environ.get("CUDA_VERSION", "13.0.2").strip()
+    value = os.environ.get("CUDA_VERSION", "").strip()
+    if not value:
+        try:
+            import torch
+
+            value = str(torch.version.cuda or "").strip()
+        except (ImportError, OSError):
+            value = ""
+    if re.fullmatch(r"\d+\.\d+", value):
+        value = f"{value}.0"
+    if not value:
+        value = "13.0.2"
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", value)
     if match is None:
         raise ValueError(f"CUDA_VERSION must use MAJOR.MINOR.PATCH format, got {value!r}")

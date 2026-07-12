@@ -55,7 +55,7 @@ modal
 msgspec
 numba==0.63.0
 nvidia-mathdx
-nvidia-resiliency-ext
+nvidia-resiliency-ext @ git+https://github.com/NVIDIA/nvidia-resiliency-ext.git@v0.6.0
 omegaconf>=2.3.0
 openai_harmony
 opentelemetry-api
