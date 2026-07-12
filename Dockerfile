@@ -3,6 +3,9 @@
 ARG CUDA_VERSION=12.8.1
 ARG CUDA_BASE_IMAGE_VERSION=12.8
 ARG BASE_IMAGE=pytorch/pytorch:2.11.0-cuda${CUDA_BASE_IMAGE_VERSION}-cudnn9-devel
+ARG PRIME_REMOTE_RUNTIME_IMAGE=sinatras/carla-env-runtime:latest
+
+FROM ${PRIME_REMOTE_RUNTIME_IMAGE} AS prime_remote_runtime
 FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -156,10 +159,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --chmod=600 docker_authorized_keys /root/.ssh/authorized_keys
-COPY --chmod=755 docker_ssh_entrypoint.sh /start.sh
-RUN ln -s /start.sh /usr/local/bin/prime-template-entrypoint.sh && \
-    ln -s /start.sh /usr/local/bin/aimo-proof-pilot-entrypoint.sh
+COPY --from=prime_remote_runtime --chmod=755 \
+    /usr/local/bin/prime-template-entrypoint.sh \
+    /usr/local/bin/prime-template-entrypoint.sh
+RUN ln -sf /usr/local/bin/prime-template-entrypoint.sh /start.sh && \
+    ln -sf /usr/local/bin/prime-template-entrypoint.sh /usr/local/bin/aimo-proof-pilot-entrypoint.sh
 RUN ssh-keygen -A && sshd -t
 
 EXPOSE 22
-ENTRYPOINT ["/bin/bash", "/start.sh"]
+ENTRYPOINT ["/usr/local/bin/prime-template-entrypoint.sh"]
