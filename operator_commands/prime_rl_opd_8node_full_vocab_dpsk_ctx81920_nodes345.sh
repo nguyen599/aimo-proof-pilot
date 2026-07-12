@@ -427,6 +427,8 @@ fi
 
 MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/tmp/models/opd-32b-deploy/opd-32b-deploy}"
 TEACHER_MODEL_PATH="${PRIME_OPD_TEACHER_MODEL_PATH:-/tmp/models/dpsk-v4-flash}"
+TRAIN_PYTHON="${PRIME_TRAIN_PYTHON:-/usr/bin/python}"
+TRAIN_ENTRYPOINT="${PRIME_TRAIN_ENTRYPOINT:-/app/train.py}"
 RUNTIME_BASE="${PRIME_3NODE_RUNTIME_BASE:-${TMP_ROOT}/runtime}"
 mkdir -p "${RUNTIME_BASE}"
 RUNTIME_ROOT="${PRIME_3NODE_RUNTIME_ROOT:-${RUNTIME_BASE}/aimo-proof-pilot}"
@@ -698,7 +700,7 @@ case "${PRIME_COMPONENT_ROLE}" in
     # TP Q/K RMSNorm all-gathers during decode while still using all 8 GPUs.
     export VLLM_FLASHINFER_ALLREDUCE_BACKEND="${PRIME_VLLM_FLASHINFER_ALLREDUCE_BACKEND:-trtllm}"
     export VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE="${PRIME_VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE:-2147483648}"
-    launch_train "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
+    launch_train "${TRAIN_PY_ENV[@]}" "${TRAIN_PYTHON}" "${TRAIN_ENTRYPOINT}" "${COMMON_ARGS[@]}" \
       --prime_component policy_inference \
       --prime_policy_port "${POLICY_PORT}" \
       --prime_policy_gpu_ids "${POLICY_GPU_IDS}" \
@@ -728,7 +730,7 @@ case "${PRIME_COMPONENT_ROLE}" in
     # for DeepSeek-V4-Flash, but avoid FlashInfer allreduce fusion here.
     export VLLM_FLASHINFER_ALLREDUCE_BACKEND="${PRIME_OPD_TEACHER_VLLM_FLASHINFER_ALLREDUCE_BACKEND:-trtllm}"
     export VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE="${PRIME_OPD_TEACHER_VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE:-2147483648}"
-    launch_train "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
+    launch_train "${TRAIN_PY_ENV[@]}" "${TRAIN_PYTHON}" "${TRAIN_ENTRYPOINT}" "${COMMON_ARGS[@]}" \
       --prime_component teacher_inference \
       --prime_train_gpus 0 \
       --prime_infer_gpus 0 \
@@ -757,7 +759,7 @@ case "${PRIME_COMPONENT_ROLE}" in
   trainer_orchestrator)
     echo "[prime-opd-3node] starting trainer; train_engine_rl will wait for policy and teacher endpoints"
     export OLMO_RUN_DIR_NAME="${RUN_NAME}_trainer_node${NODE_LABEL}"
-    launch_train "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
+    launch_train "${TRAIN_PY_ENV[@]}" "${TRAIN_PYTHON}" "${TRAIN_ENTRYPOINT}" "${COMMON_ARGS[@]}" \
       --prime_component trainer_orchestrator \
       --prime_train_gpus "${TRAIN_GPU_COUNT}" \
       --prime_infer_gpus 0 \
@@ -779,7 +781,7 @@ case "${PRIME_COMPONENT_ROLE}" in
     export OLMO_RUN_DIR_NAME="${RUN_NAME}_full_node${NODE_LABEL}"
     export VLLM_FLASHINFER_ALLREDUCE_BACKEND="${PRIME_VLLM_FLASHINFER_ALLREDUCE_BACKEND:-trtllm}"
     export VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE="${PRIME_VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE:-2147483648}"
-    launch_train "${TRAIN_PY_ENV[@]}" /usr/bin/python /app/train.py "${COMMON_ARGS[@]}" \
+    launch_train "${TRAIN_PY_ENV[@]}" "${TRAIN_PYTHON}" "${TRAIN_ENTRYPOINT}" "${COMMON_ARGS[@]}" \
       --prime_component full \
       --prime_train_gpus "${TRAIN_GPU_COUNT}" \
       --prime_infer_gpus "${POLICY_GPU_COUNT}" \

@@ -22,6 +22,8 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
             "PRIME_3NODE_ROLE_LOCK": str(tmp_path / "role.lock"),
             "PRIME_3NODE_TMP_ROOT": str(tmp_path / "runtime"),
             "PRIME_3NODE_RENDEZVOUS_DIR": str(tmp_path / "rendezvous"),
+            "PRIME_TRAIN_PYTHON": os.sys.executable,
+            "PRIME_TRAIN_ENTRYPOINT": str(REPO_ROOT / "src" / "train.py"),
             "OLMO_RUN_DIR_NAME": "one_node_layout_test",
         }
     )
@@ -45,4 +47,6 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
     assert "--prime_infer_gpus 4" in output
     assert "--prime_vllm_data_parallel_size 4" in output
     assert "--prime_opd_teacher_vllm_tensor_parallel_size 2" in output
+    assert os.sys.executable in output
+    assert str(REPO_ROOT / "src" / "train.py") in output
     assert "disable_custom_all_reduce" not in output
