@@ -72,7 +72,9 @@ uv_pip() {
     if [ -n "${VIRTUAL_ENV:-}" ]; then
         uv pip "$@"
     else
-        uv pip --system "$@"
+        local command="${1:?uv pip subcommand is required}"
+        shift
+        uv pip "${command}" --system "$@"
     fi
 }
 
