@@ -667,7 +667,7 @@ COMMON_ARGS=(
   --weight_decay "${PRIME_WEIGHT_DECAY:-0.0}"
   --max_grad_norm "${PRIME_MAX_GRAD_NORM:-1.0}"
   --prime_algorithm opd
-  --prime_opd_distill_mode full_vocab_hidden
+  --prime_opd_distill_mode "${PRIME_OPD_DISTILL_MODE:-token_logprobs}"
   --prime_opd_full_vocab_hidden_transport "${PRIME_OPD_FULL_VOCAB_HIDDEN_TRANSPORT:-filesystem}"
   --prime_opd_full_vocab_hidden_path "${HIDDEN_STATE_DIR}"
   --prime_opd_full_vocab_teacher_lm_head_path "${PRIME_OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH:-${TEACHER_MODEL_PATH}}"
