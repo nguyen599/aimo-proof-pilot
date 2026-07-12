@@ -86,11 +86,8 @@ uv_pip install --no-cache-dir --no-deps ring-flash-attn==0.1.8
 install_selected_nccl_wheel
 
 if [ "${INSTALL_MODAL_SIMP_EXTRAS}" = "1" ]; then
-    bash "${APP_DIR}/install_modal_simp_extras.sh"
-fi
-
-if [ "${INSTALL_MAGI_ATTENTION}" = "1" ]; then
-    PYTHON_BIN="$(command -v python)" bash "${APP_DIR}/install_magi_attention.sh"
+    INSTALL_MAGI_ATTENTION="${INSTALL_MAGI_ATTENTION}" \
+        bash "${APP_DIR}/install_modal_simp_extras.sh"
 fi
 
 if [ "${INSTALL_SINGULARITY_CE}" = "1" ]; then

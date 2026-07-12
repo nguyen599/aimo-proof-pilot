@@ -37,6 +37,7 @@ INSTALL_MEGATRON_CORE="${INSTALL_MEGATRON_CORE:-1}"
 INSTALL_LIGER_KERNEL="${INSTALL_LIGER_KERNEL:-1}"
 INSTALL_VERL_PACKAGE="${INSTALL_VERL_PACKAGE:-1}"
 INSTALL_PRIME_RL_DEPS="${INSTALL_PRIME_RL_DEPS:-1}"
+INSTALL_MAGI_ATTENTION="${INSTALL_MAGI_ATTENTION:-1}"
 MEGATRON_CORE_REPO="${MEGATRON_CORE_REPO:-https://github.com/NVIDIA/Megatron-LM.git}"
 MEGATRON_CORE_REF="${MEGATRON_CORE_REF:-main}"
 MEGATRON_CORE_DIR="${MEGATRON_CORE_DIR:-/opt/Megatron-LM}"
@@ -47,6 +48,7 @@ VERL_PACKAGE="${VERL_PACKAGE:-git+https://github.com/verl-project/verl.git}"
 TORCHTITAN_REQUIREMENT="${TORCHTITAN_REQUIREMENT:-torchtitan @ git+https://github.com/pytorch/torchtitan.git@23e4dfc}"
 DION_REQUIREMENT="${DION_REQUIREMENT:-dion @ git+https://github.com/samsja/dion.git@d891eeb}"
 DEEP_EP_REQUIREMENT="${DEEP_EP_REQUIREMENT:-deep-ep @ https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/deep_ep-1.2.1+29d31c0-cp312-cp312-linux_x86_64.whl}"
+DEEP_GEMM_REQUIREMENT="${DEEP_GEMM_REQUIREMENT:-deep-gemm @ https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/deep_gemm-2.5.0+891d57b-cp312-cp312-linux_x86_64.whl}"
 VERIFY_MAMBA_SSM_IMPORT="${VERIFY_MAMBA_SSM_IMPORT:-0}"
 VERIFY_TRANSFORMER_ENGINE_IMPORT="${VERIFY_TRANSFORMER_ENGINE_IMPORT:-0}"
 INSTALL_FULL_SYSTEM_APT="${INSTALL_FULL_SYSTEM_APT:-1}"
@@ -537,9 +539,49 @@ if [ "${INSTALL_PRIME_RL_DEPS}" = "1" ]; then
     uv_pip install --no-cache-dir \
         "${TORCHTITAN_REQUIREMENT}" \
         "${DION_REQUIREMENT}" \
-        "${DEEP_EP_REQUIREMENT}"
+        "${DEEP_EP_REQUIREMENT}" \
+        "graphql-core>=3.2.0" \
+        "beartype>=0.21.0" \
+        "datasets>=4.0.0" \
+        "transformers==5.13.0" \
+        sentencepiece \
+        tiktoken \
+        "wandb>=0.26.1" \
+        "wandb-workspaces>=0.4.3" \
+        "nltk>=3.9.1" \
+        "jaxtyping>=0.3.2" \
+        "loguru>=0.7.3" \
+        "pyarrow>=21.0.0" \
+        "pyzmq>=27.1.0" \
+        "aiolimiter>=1.2.1" \
+        "tenacity>=8.2.0" \
+        "openai>=1.106.1" \
+        "orjson>=3.11.0" \
+        "rich>=14.0.0" \
+        "setproctitle>=1.3.0" \
+        "uvloop>=0.21.0" \
+        "nvidia-ml-py>=12.575.51" \
+        "pybase64>=1.4.2" \
+        "pandas>=2.0" \
+        "msgspec>=0.18" \
+        "tomli-w>=1.2.0" \
+        "prime-sandboxes>=0.2.27" \
+        weave \
+        "debugpy>=1.8.0" \
+        "expecttest>=0.3.0"
+    if [ "${CUDA_MAJOR}" -ge 13 ]; then
+        uv_pip install --no-cache-dir --no-deps "${DEEP_GEMM_REQUIREMENT}"
+    else
+        echo "Skipping standalone DeepGEMM wheel on CUDA ${CUDA_MAJOR_MINOR}; it links against libcudart.so.13."
+    fi
 else
     echo "Skipping Prime-RL dependency install because INSTALL_PRIME_RL_DEPS=${INSTALL_PRIME_RL_DEPS}."
+fi
+
+if [ "${INSTALL_MAGI_ATTENTION}" = "1" ]; then
+    PYTHON_BIN="$(command -v python)" bash "${SCRIPT_DIR}/install_magi_attention.sh"
+else
+    echo "Skipping MagiAttention install because INSTALL_MAGI_ATTENTION=${INSTALL_MAGI_ATTENTION}."
 fi
 
 if python - <<'PY'

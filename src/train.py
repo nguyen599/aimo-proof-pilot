@@ -69,7 +69,6 @@ DEFAULT_CUDA_KERNEL_WHEEL_TAG = {
 DEFAULT_SUBMISSIONS_REPO = "https://github.com/nguyen599/aimo-proof-pilot.git"
 DEFAULT_OPEN_INSTRUCT_REPO = "https://github.com/nguyen599/open-instruct.git"
 DEFAULT_OLMO_CORE_REPO = "https://github.com/nguyen599/OLMo-core.git"
-DEFAULT_RLCSD_REPO = "https://github.com/THU-BPM/RLCSD.git"
 DEFAULT_VERL_REPO = "https://github.com/nguyen599/verl.git"
 DEFAULT_PRIME_RL_REPO = "https://github.com/nguyen599/prime-rl.git"
 DEFAULT_MEGATRON_CORE_REPO = "https://github.com/NVIDIA/Megatron-LM.git"
@@ -77,7 +76,6 @@ DEFAULT_LIGER_KERNEL_REPO = "https://github.com/linkedin/Liger-Kernel.git"
 DEFAULT_SUBMISSIONS_REF = "main"
 DEFAULT_OPEN_INSTRUCT_REF = "main"
 DEFAULT_OLMO_CORE_REF = "main"
-DEFAULT_RLCSD_REF = "main"
 DEFAULT_VERL_REF = "main"
 DEFAULT_PRIME_RL_REF = "main"
 DEFAULT_MEGATRON_CORE_REF = "main"
@@ -85,7 +83,6 @@ DEFAULT_LIGER_KERNEL_REF = "main"
 DEFAULT_RUNTIME_DIR = "/tmp/aimo-proof-pilot-runtime"
 DEFAULT_OPEN_INSTRUCT_RUNTIME_DIR = "/tmp/open-instruct-runtime"
 DEFAULT_OLMO_CORE_RUNTIME_DIR = "/tmp/OLMo-core-runtime"
-DEFAULT_RLCSD_RUNTIME_DIR = "/tmp/RLCSD-runtime"
 DEFAULT_VERL_RUNTIME_DIR = "/tmp/verl-runtime"
 DEFAULT_PRIME_RL_RUNTIME_DIR = "/tmp/prime-rl-runtime"
 DEFAULT_RUNTIME_FETCH_STATE_DIR = "/tmp/train-runtime-fetch"
@@ -170,51 +167,6 @@ DEFAULT_GRPO_RUNTIME_REQUIREMENTS = (
     "uvloop>=0.21.0",
     "xgrammar>=0.2.0,<1.0.0",
 )
-DEFAULT_RLCSD_RUNTIME_REQUIREMENTS = (
-    # Keep CUDA/torch/transformers packages out of this overlay; vLLM is
-    # installed here for RLCSD because the vendored verl imports it directly.
-    "hydra-core>=1.3.2",
-    "omegaconf>=2.3.0",
-    "aiohttp-cors==0.8.1",
-    "codetiming",
-    "colorful==0.5.8",
-    "datasets>=3.0.0",
-    "openai>=1.0.0",
-    "peft>=0.14.0",
-    "markdown==3.10.2",
-    "opencensus==0.11.4",
-    "opencensus-context==0.1.3",
-    "orjson",
-    "packaging==25.0",
-    # CUDA 12 images use the private source-built vLLM from the base image.
-    # Do not ask the per-run overlay to resolve a nonexistent public cu128 wheel.
-    *(
-        (f"vllm=={DEFAULT_GRPO_RUNTIME_VLLM_VERSION}",)
-        if DEFAULT_GRPO_RUNTIME_VLLM_VERSION
-        else ()
-    ),
-    "gguf>=0.17.0",
-    "pyarrow>=19.0.0",
-    "py-spy==0.4.2",
-    "pybind11==3.0.4",
-    # Use the Ray installed in the image. Installing ray[default] here pulls a
-    # dashboard/OpenTelemetry stack that fails on the host image.
-    "dill",
-    "deepspeed>=0.15.0",
-    "pandas",
-    "pylatexenc",
-    "latex2sympy2_extended",
-    "math_verify>=0.7.0",
-    "tensorboard",
-    "tensorboard-data-server==0.7.2",
-    "tensordict>=0.8.0,<=0.10.0,!=0.9.0",
-    "torchdata==0.11.0",
-    "pyvers",
-    "smart_open==7.6.1",
-    "watchdog",
-    "werkzeug==3.1.8",
-    "wrapt==2.2.1",
-)
 DEFAULT_VERL_AUTOMODEL_RUNTIME_REQUIREMENTS = (
     "nemo-automodel==0.4.0",
 )
@@ -223,72 +175,8 @@ DEFAULT_VERL_NVIDIA_RUNTIME_REQUIREMENTS = (
     # ncclCommQueryProperties symbol, which is present in NCCL 2.29.3.
     f"nvidia-nccl-{DEFAULT_CUDA_PACKAGE_FAMILY}==2.29.3",
 )
-DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS = (
-    # pip does not understand prime-rl's [tool.uv.sources], so direct source
-    # dependencies need to be supplied explicitly when installing with pip.
-    "torchtitan @ git+https://github.com/pytorch/torchtitan.git@23e4dfc",
-    "dion @ git+https://github.com/samsja/dion.git@d891eeb",
-    (
-        "deep-ep @ "
-        "https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/"
-        "deep_ep-1.2.1+29d31c0-cp312-cp312-linux_x86_64.whl"
-    ),
-    (
-        "deep-gemm @ "
-        "https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/"
-        "deep_gemm-2.5.0+891d57b-cp312-cp312-linux_x86_64.whl"
-    ),
-    (
-        "magi-attention @ git+https://github.com/SandAI-org/MagiAttention.git@"
-        "efaabdbcbc53928debf2fcde189c45d6646210c6"
-    ),
-    (
-        "magi-attn-extensions @ git+https://github.com/SandAI-org/MagiAttention.git@"
-        "efaabdbcbc53928debf2fcde189c45d6646210c6#subdirectory=extensions"
-    ),
-)
-DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
-    # Prime-RL/vLLM 0.24 currently trips OLMo3Sink RoPE loading with dict
-    # rope_scaling values. The runtime bootstrap installs DEFAULT_VLLM_RUNTIME_WHEEL_URL
-    # separately with --no-deps; set PRIME_RL_RUNTIME_INSTALL_VLLM=0 to keep the
-    # baked image wheel, or PRIME_RL_RUNTIME_VLLM_WHEEL_URL to override.
-    # Prime-RL's W&B monitor imports the historical wandb_gql module. Our
-    # runtime source tree provides a compatibility module backed by
-    # graphql-core, and these versions match current Prime-RL metadata.
-    "graphql-core>=3.2.0",
-    "beartype>=0.21.0",
-    "datasets>=4.0.0",
-    "transformers==5.13.0",
-    "sentencepiece",
-    "tiktoken",
-    "wandb>=0.26.1",
-    "wandb-workspaces>=0.4.3",
-    "nltk>=3.9.1",
-    "jaxtyping>=0.3.2",
-    "loguru>=0.7.3",
-    "pyarrow>=21.0.0",
-    "pyzmq>=27.1.0",
-    "aiolimiter>=1.2.1",
-    "tenacity>=8.2.0",
-    "openai>=1.106.1",
-    "orjson>=3.11.0",
-    "rich>=14.0.0",
-    "setproctitle>=1.3.0",
-    "uvloop>=0.21.0",
-    "nvidia-ml-py>=12.575.51",
-    "pybase64>=1.4.2",
-    "pandas>=2.0",
-    "msgspec>=0.18",
-    "tomli-w>=1.2.0",
-    # The vendored Verifiers package imports SandboxMixin while loading legacy
-    # environments, even when the selected environment does not use a sandbox.
-    "prime-sandboxes>=0.2.27",
-    "weave",
-    # MagiAttention extensions currently import an optional DSA test helper
-    # from package __init__, which assumes these NGC image utilities exist.
-    "debugpy>=1.8.0",
-    "expecttest>=0.3.0",
-)
+DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS: tuple[str, ...] = ()
+DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS: tuple[str, ...] = ()
 PROTECTED_RUNTIME_OVERLAY_PACKAGES = (
     "flash_attn",
     "functorch",
@@ -309,7 +197,6 @@ WRAPPER_REEXEC_ENV = "TRAIN_WRAPPER_REEXECUTED"
 PREPARED_ENGINE_ENV = "TRAIN_WRAPPER_PREPARED_ENGINE_PATH"
 PREPARED_OPEN_INSTRUCT_ENV = "TRAIN_WRAPPER_PREPARED_OPEN_INSTRUCT_DIR"
 PREPARED_OLMO_CORE_ENV = "TRAIN_WRAPPER_PREPARED_OLMO_CORE_DIR"
-PREPARED_RLCSD_ENV = "TRAIN_WRAPPER_PREPARED_RLCSD_DIR"
 PREPARED_VERL_ENV = "TRAIN_WRAPPER_PREPARED_VERL_DIR"
 PREPARED_PRIME_RL_ENV = "TRAIN_WRAPPER_PREPARED_PRIME_RL_DIR"
 WRAPPER_LOG_FILE: Path | None = None
@@ -354,9 +241,6 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--olmo-core-repo", "--olmo_core_repo", default=None)
     parser.add_argument("--olmo-core-ref", "--olmo_core_ref", default=None)
     parser.add_argument("--olmo-core-runtime-dir", "--olmo_core_runtime_dir", default=None)
-    parser.add_argument("--rlcsd-repo", "--rlcsd_repo", default=None)
-    parser.add_argument("--rlcsd-ref", "--rlcsd_ref", default=None)
-    parser.add_argument("--rlcsd-runtime-dir", "--rlcsd_runtime_dir", default=None)
     parser.add_argument("--verl-repo", "--verl_repo", default=None)
     parser.add_argument("--verl-ref", "--verl_ref", default=None)
     parser.add_argument("--verl-runtime-dir", "--verl_runtime_dir", default=None)
@@ -1032,16 +916,12 @@ def build_pythonpath(
     env: dict[str, str],
     open_instruct_dir: Path | None = None,
     olmo_core_dir: Path | None = None,
-    rlcsd_dir: Path | None = None,
     verl_dir: Path | None = None,
     prime_rl_dir: Path | None = None,
 ) -> str:
     parts = []
     if verl_dir is not None:
         parts.append(str(verl_dir))
-    if rlcsd_dir is not None:
-        parts.append(str(rlcsd_dir / "third_party" / "verl"))
-        parts.append(str(rlcsd_dir))
     if prime_rl_dir is not None:
         parts.extend(prime_rl_pythonpath_entries(prime_rl_dir))
     if open_instruct_dir is not None:
@@ -1125,7 +1005,6 @@ def exec_engine(
     forwarded_args: list[str],
     open_instruct_dir: Path | None = None,
     olmo_core_dir: Path | None = None,
-    rlcsd_dir: Path | None = None,
     verl_dir: Path | None = None,
     prime_rl_dir: Path | None = None,
 ) -> None:
@@ -1139,8 +1018,6 @@ def exec_engine(
         env["OPEN_INSTRUCT_DIR"] = str(open_instruct_dir)
     if olmo_core_dir is not None:
         env["OLMO_CORE_DIR"] = str(olmo_core_dir)
-    if rlcsd_dir is not None:
-        env["RLCSD_DIR"] = str(rlcsd_dir)
     if verl_dir is not None:
         env["VERL_DIR"] = str(verl_dir)
     if prime_rl_dir is not None:
@@ -1154,7 +1031,6 @@ def exec_engine(
         env,
         open_instruct_dir,
         olmo_core_dir,
-        rlcsd_dir,
         verl_dir,
         prime_rl_dir,
     )
@@ -1168,7 +1044,6 @@ def exec_runtime_wrapper(
     engine_path: Path,
     open_instruct_dir: Path,
     olmo_core_dir: Path,
-    rlcsd_dir: Path,
     verl_dir: Path,
     prime_rl_dir: Path,
 ) -> None:
@@ -1179,7 +1054,6 @@ def exec_runtime_wrapper(
     env[PREPARED_ENGINE_ENV] = str(engine_path)
     env[PREPARED_OPEN_INSTRUCT_ENV] = str(open_instruct_dir)
     env[PREPARED_OLMO_CORE_ENV] = str(olmo_core_dir)
-    env[PREPARED_RLCSD_ENV] = str(rlcsd_dir)
     env[PREPARED_VERL_ENV] = str(verl_dir)
     env[PREPARED_PRIME_RL_ENV] = str(prime_rl_dir)
     command = [sys.executable, str(wrapper_path), *raw_args]
@@ -1191,19 +1065,16 @@ def set_prepared_runtime_env(
     engine_path: Path,
     open_instruct_dir: Path,
     olmo_core_dir: Path,
-    rlcsd_dir: Path,
     verl_dir: Path,
     prime_rl_dir: Path,
 ) -> None:
     os.environ[PREPARED_ENGINE_ENV] = str(engine_path)
     os.environ[PREPARED_OPEN_INSTRUCT_ENV] = str(open_instruct_dir)
     os.environ[PREPARED_OLMO_CORE_ENV] = str(olmo_core_dir)
-    os.environ[PREPARED_RLCSD_ENV] = str(rlcsd_dir)
     os.environ[PREPARED_VERL_ENV] = str(verl_dir)
     os.environ[PREPARED_PRIME_RL_ENV] = str(prime_rl_dir)
     os.environ["OPEN_INSTRUCT_DIR"] = str(open_instruct_dir)
     os.environ["OLMO_CORE_DIR"] = str(olmo_core_dir)
-    os.environ["RLCSD_DIR"] = str(rlcsd_dir)
     os.environ["VERL_DIR"] = str(verl_dir)
     os.environ["PRIME_RL_DIR"] = str(prime_rl_dir)
 
@@ -1243,15 +1114,6 @@ def runtime_repo_settings(wrapper_args: argparse.Namespace) -> dict[str, str]:
                 DEFAULT_OLMO_CORE_RUNTIME_DIR,
             )
         ),
-        "rlcsd_repo": wrapper_args.rlcsd_repo or os.environ.get("RLCSD_REPO") or DEFAULT_RLCSD_REPO,
-        "rlcsd_ref": wrapper_args.rlcsd_ref or os.environ.get("RLCSD_REF") or DEFAULT_RLCSD_REF,
-        "rlcsd_runtime_dir": str(
-            resolve_runtime_dir(
-                wrapper_args.rlcsd_runtime_dir,
-                "RLCSD_RUNTIME_DIR",
-                DEFAULT_RLCSD_RUNTIME_DIR,
-            )
-        ),
         "verl_repo": wrapper_args.verl_repo or os.environ.get("VERL_REPO") or DEFAULT_VERL_REPO,
         "verl_ref": wrapper_args.verl_ref or os.environ.get("VERL_REF") or DEFAULT_VERL_REF,
         "verl_runtime_dir": str(
@@ -1276,7 +1138,7 @@ def runtime_repo_settings(wrapper_args: argparse.Namespace) -> dict[str, str]:
 def fetch_runtime_repos(
     wrapper_args: argparse.Namespace,
     forwarded_args: list[str] | None = None,
-) -> tuple[Path, Path, Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path]:
     settings = runtime_repo_settings(wrapper_args)
     submissions_repo = settings["submissions_repo"]
     submissions_ref = settings["submissions_ref"]
@@ -1287,7 +1149,6 @@ def fetch_runtime_repos(
         # Avoid cloning large training dependency repos just to keep a command gate alive.
         return (
             submissions_dir / "src" / "train_engine.py",
-            submissions_dir,
             submissions_dir,
             submissions_dir,
             submissions_dir,
@@ -1308,7 +1169,6 @@ def fetch_runtime_repos(
         )
         return (
             submissions_dir / "src" / "train_engine.py",
-            submissions_dir,
             submissions_dir,
             submissions_dir,
             submissions_dir,
@@ -1335,16 +1195,6 @@ def fetch_runtime_repos(
         "OLMo-core",
     )
 
-    rlcsd_repo = settings["rlcsd_repo"]
-    rlcsd_ref = settings["rlcsd_ref"]
-    rlcsd_runtime_dir = Path(settings["rlcsd_runtime_dir"])
-    rlcsd_dir = ensure_runtime_repo(
-        rlcsd_repo,
-        rlcsd_ref,
-        rlcsd_runtime_dir,
-        "RLCSD",
-    )
-
     verl_repo = settings["verl_repo"]
     verl_ref = settings["verl_ref"]
     verl_runtime_dir = Path(settings["verl_runtime_dir"])
@@ -1365,7 +1215,7 @@ def fetch_runtime_repos(
         "Prime-RL",
     )
 
-    return submissions_dir / "src" / "train_engine.py", open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir
+    return submissions_dir / "src" / "train_engine.py", open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir
 
 
 def runtime_fetch_coordination_id() -> str:
@@ -1416,12 +1266,11 @@ def read_runtime_fetch_state(path: Path) -> dict[str, object] | None:
         return None
 
 
-def runtime_paths_from_state(state: dict[str, object]) -> tuple[Path, Path, Path, Path, Path, Path]:
+def runtime_paths_from_state(state: dict[str, object]) -> tuple[Path, Path, Path, Path, Path]:
     return (
         Path(str(state["engine_path"])),
         Path(str(state["open_instruct_dir"])),
         Path(str(state["olmo_core_dir"])),
-        Path(str(state["rlcsd_dir"])),
         Path(str(state["verl_dir"])),
         Path(str(state["prime_rl_dir"])),
     )
@@ -1431,14 +1280,12 @@ def validate_runtime_paths(
     engine_path: Path,
     open_instruct_dir: Path,
     olmo_core_dir: Path,
-    rlcsd_dir: Path,
     verl_dir: Path,
     prime_rl_dir: Path,
 ) -> str | None:
     submissions_dir = engine_path.parent.parent
     open_instruct_placeholder = same_file_path(open_instruct_dir, submissions_dir)
     olmo_core_placeholder = same_file_path(olmo_core_dir, submissions_dir)
-    rlcsd_placeholder = same_file_path(rlcsd_dir, submissions_dir)
     verl_placeholder = same_file_path(verl_dir, submissions_dir)
     prime_rl_placeholder = same_file_path(prime_rl_dir, submissions_dir)
     checks = [
@@ -1452,14 +1299,6 @@ def validate_runtime_paths(
         (
             olmo_core_placeholder or (olmo_core_dir / "src").is_dir(),
             f"missing OLMo-core src dir {olmo_core_dir}",
-        ),
-        (
-            rlcsd_placeholder or (rlcsd_dir / "src").is_dir(),
-            f"missing RLCSD src dir {rlcsd_dir}",
-        ),
-        (
-            rlcsd_placeholder or (rlcsd_dir / "third_party" / "verl" / "verl" / "__init__.py").is_file(),
-            f"missing RLCSD vendored verl package {rlcsd_dir}",
         ),
         (
             verl_placeholder or (verl_dir / "verl" / "__init__.py").is_file(),
@@ -1487,22 +1326,20 @@ def same_file_path(left: Path, right: Path) -> bool:
         return str(left.absolute()) == str(right.absolute())
 
 
-def prepared_runtime_repos_from_env() -> tuple[Path, Path, Path, Path, Path, Path] | None:
+def prepared_runtime_repos_from_env() -> tuple[Path, Path, Path, Path, Path] | None:
     if os.environ.get(WRAPPER_REEXEC_ENV) != "1":
         return None
     engine_path = os.environ.get(PREPARED_ENGINE_ENV)
     open_instruct_dir = os.environ.get(PREPARED_OPEN_INSTRUCT_ENV)
     olmo_core_dir = os.environ.get(PREPARED_OLMO_CORE_ENV)
-    rlcsd_dir = os.environ.get(PREPARED_RLCSD_ENV)
     verl_dir = os.environ.get(PREPARED_VERL_ENV)
     prime_rl_dir = os.environ.get(PREPARED_PRIME_RL_ENV)
-    if not (engine_path and open_instruct_dir and olmo_core_dir and rlcsd_dir and verl_dir and prime_rl_dir):
+    if not (engine_path and open_instruct_dir and olmo_core_dir and verl_dir and prime_rl_dir):
         return None
     paths = (
         Path(engine_path),
         Path(open_instruct_dir),
         Path(olmo_core_dir),
-        Path(rlcsd_dir),
         Path(verl_dir),
         Path(prime_rl_dir),
     )
@@ -1524,7 +1361,6 @@ def maybe_reexec_runtime_wrapper(
     engine_path: Path,
     open_instruct_dir: Path,
     olmo_core_dir: Path,
-    rlcsd_dir: Path,
     verl_dir: Path,
     prime_rl_dir: Path,
 ) -> None:
@@ -1540,7 +1376,6 @@ def maybe_reexec_runtime_wrapper(
         engine_path,
         open_instruct_dir,
         olmo_core_dir,
-        rlcsd_dir,
         verl_dir,
         prime_rl_dir,
     )
@@ -1616,7 +1451,6 @@ def runtime_training_deps_settings(wrapper_args: argparse.Namespace) -> dict[str
         or DEFAULT_TRANSFORMER_ENGINE_WHEEL_FILE,
         "verl_nvidia_runtime_requirements": verl_nvidia_runtime_requirements_string(),
         "grpo_runtime_requirements": grpo_runtime_requirements_string(),
-        "rlcsd_runtime_requirements": rlcsd_runtime_requirements_string(),
         "verl_automodel_runtime_requirements": verl_automodel_runtime_requirements_string(),
         "prime_rl_runtime_requirements": prime_rl_runtime_requirements_string(),
         "prime_rl_source_requirements": prime_rl_source_requirements_string(),
@@ -1704,12 +1538,6 @@ def runtime_dependency_env(site_dir: Path, megatron_dir: Path) -> dict[str, str]
         verl_dir = Path(prepared_verl)
         env["VERL_DIR"] = str(verl_dir)
         parts.append(str(verl_dir))
-    prepared_rlcsd = env.get(PREPARED_RLCSD_ENV) or env.get("RLCSD_DIR")
-    if prepared_rlcsd:
-        rlcsd_dir = Path(prepared_rlcsd)
-        env["RLCSD_DIR"] = str(rlcsd_dir)
-        parts.append(str(rlcsd_dir / "third_party" / "verl"))
-        parts.append(str(rlcsd_dir))
     prepared_prime_rl = env.get(PREPARED_PRIME_RL_ENV) or env.get("PRIME_RL_DIR")
     if prepared_prime_rl:
         prime_rl_dir = Path(prepared_prime_rl)
@@ -1758,19 +1586,6 @@ def runtime_dependency_probe(
             "print('litellm', importlib.metadata.version('litellm')); "
             "print('vllm', getattr(vllm, '__version__', '<unknown>')); "
             "print('grpo_fast', grpo_fast.__file__)"
-        )
-    elif module == "rlcsd":
-        source = (
-            "import hydra; import omegaconf; import ray; import datasets; import pyarrow; "
-            "import pandas; import openai; import codetiming; import tensordict; "
-            "import math_verify; import deepspeed; import peft; "
-            "import verl.trainer.main_ppo as main_ppo; "
-            "print('hydra', hydra.__version__); "
-            "print('omegaconf', omegaconf.__version__); "
-            "print('ray', ray.__version__); "
-            "print('deepspeed', deepspeed.__version__); "
-            "print('peft', peft.__version__); "
-            "print('verl main_ppo', main_ppo.__file__)"
         )
     elif module == "nemo_automodel":
         source = (
@@ -1845,13 +1660,6 @@ def grpo_runtime_dependencies_required(forwarded_args: list[str]) -> bool:
     return forwarded_backend(forwarded_args) == "grpo_fast"
 
 
-def rlcsd_runtime_dependencies_required(forwarded_args: list[str]) -> bool:
-    env_override = os.environ.get("ENSURE_RLCSD_RUNTIME_DEPS")
-    if env_override is not None:
-        return parse_bool(env_override, False)
-    return forwarded_backend(forwarded_args) in {"verl_rlcsd", "verl_opd"}
-
-
 def prime_rl_runtime_dependencies_required(forwarded_args: list[str]) -> bool:
     env_override = os.environ.get("ENSURE_PRIME_RL_RUNTIME_DEPS")
     if env_override is not None:
@@ -1899,17 +1707,6 @@ def grpo_runtime_requirements() -> list[str]:
 
 def grpo_runtime_requirements_string() -> str:
     return "\n".join(grpo_runtime_requirements())
-
-
-def rlcsd_runtime_requirements() -> list[str]:
-    override = os.environ.get("RLCSD_RUNTIME_REQUIREMENTS")
-    if override:
-        return [requirement for requirement in shlex.split(override) if requirement]
-    return list(DEFAULT_RLCSD_RUNTIME_REQUIREMENTS)
-
-
-def rlcsd_runtime_requirements_string() -> str:
-    return "\n".join(rlcsd_runtime_requirements())
 
 
 def verl_training_fp8_required(forwarded_args: list[str]) -> bool:
@@ -2988,10 +2785,9 @@ def download_runtime_apex_wheel(
 def skip_runtime_apex_liger_bootstrap(
     prime_rl_required: bool,
     grpo_required: bool,
-    rlcsd_required: bool,
     verl_automodel_required: bool,
 ) -> bool:
-    return prime_rl_required and not (grpo_required or rlcsd_required or verl_automodel_required)
+    return prime_rl_required and not (grpo_required or verl_automodel_required)
 
 
 def prepare_runtime_training_dependencies(
@@ -3004,7 +2800,6 @@ def prepare_runtime_training_dependencies(
 ) -> None:
     settings = runtime_training_deps_settings(wrapper_args)
     grpo_required = grpo_runtime_dependencies_required(forwarded_args)
-    rlcsd_required = rlcsd_runtime_dependencies_required(forwarded_args)
     verl_automodel_required = verl_training_fp8_required(forwarded_args)
     prime_rl_required = prime_rl_runtime_dependencies_required(forwarded_args)
     te_required = transformer_engine_runtime_required(forwarded_args)
@@ -3012,7 +2807,6 @@ def prepare_runtime_training_dependencies(
     skip_apex_liger_bootstrap = skip_runtime_apex_liger_bootstrap(
         prime_rl_required,
         grpo_required,
-        rlcsd_required,
         verl_automodel_required,
     )
     if cuda_nvidia_runtime_required:
@@ -3039,7 +2833,7 @@ def prepare_runtime_training_dependencies(
         remove_grpo_runtime_sitecustomize(site_dir)
         patch_runtime_peft_transformer_engine_probe(site_dir)
         patch_runtime_openenv_lazy_imports(site_dir)
-    base_stack_required = not prime_rl_required or grpo_required or rlcsd_required or verl_automodel_required or te_required
+    base_stack_required = not prime_rl_required or grpo_required or verl_automodel_required or te_required
     if base_stack_required and skip_apex_liger_bootstrap:
         log("Skipping runtime Apex/Liger bootstrap for Prime-RL; these packages are expected from the image.")
     if base_stack_required and not skip_apex_liger_bootstrap:
@@ -3195,19 +2989,6 @@ def prepare_runtime_training_dependencies(
             raise RuntimeError(f"Runtime GRPO import verification failed:\n{grpo_details}")
         log(f"Runtime GRPO imports verified:\n{grpo_details}")
 
-    if rlcsd_required:
-        rlcsd_ok, rlcsd_details = runtime_dependency_probe(site_dir, megatron_dir, module="rlcsd")
-        if rlcsd_ok:
-            log("RLCSD/verl runtime imports are already available")
-        else:
-            if rlcsd_details:
-                log(f"RLCSD/verl runtime imports unavailable; installing requirements: {rlcsd_details}")
-            install_python_requirements(rlcsd_runtime_requirements(), site_dir, "RLCSD/verl")
-            rlcsd_ok, rlcsd_details = runtime_dependency_probe(site_dir, megatron_dir, module="rlcsd")
-        if not rlcsd_ok:
-            raise RuntimeError(f"Runtime RLCSD/verl import verification failed:\n{rlcsd_details}")
-        log(f"Runtime RLCSD/verl imports verified:\n{rlcsd_details}")
-
     if verl_automodel_required:
         automodel_ok, automodel_details = runtime_dependency_probe(site_dir, megatron_dir, module="nemo_automodel")
         if automodel_ok:
@@ -3340,11 +3121,6 @@ def ensure_runtime_training_dependencies(
     wrapper_args: argparse.Namespace,
     forwarded_args: list[str],
 ) -> None:
-    forwarded_rlcsd_dir = forwarded_option_value(forwarded_args, "--rlcsd_dir", "--rlcsd-dir")
-    if forwarded_rlcsd_dir and not os.environ.get("RLCSD_DIR"):
-        os.environ["RLCSD_DIR"] = forwarded_rlcsd_dir
-    rlcsd_dir_value = os.environ.get(PREPARED_RLCSD_ENV) or os.environ.get("RLCSD_DIR")
-    rlcsd_dir = Path(rlcsd_dir_value) if rlcsd_dir_value else None
     verl_dir_value = os.environ.get(PREPARED_VERL_ENV) or os.environ.get("VERL_DIR")
     verl_dir = Path(verl_dir_value) if verl_dir_value else None
     forwarded_prime_rl_dir = forwarded_option_value(forwarded_args, "--prime_rl_dir", "--prime-rl-dir")
@@ -3361,18 +3137,16 @@ def ensure_runtime_training_dependencies(
     node_rank = None if operator_mode else resolve_wrapper_node_rank(forwarded_args)
     rank_label = "none" if node_rank is None else str(node_rank)
     grpo_required = grpo_runtime_dependencies_required(forwarded_args)
-    rlcsd_required = rlcsd_runtime_dependencies_required(forwarded_args)
     verl_automodel_required = verl_training_fp8_required(forwarded_args)
     prime_rl_required = prime_rl_runtime_dependencies_required(forwarded_args)
     te_required = transformer_engine_runtime_required(forwarded_args)
     skip_apex_liger_bootstrap = skip_runtime_apex_liger_bootstrap(
         prime_rl_required,
         grpo_required,
-        rlcsd_required,
         verl_automodel_required,
     )
     if node_rank in (None, 0):
-        base_stack_required = not prime_rl_required or grpo_required or rlcsd_required or verl_automodel_required or te_required
+        base_stack_required = not prime_rl_required or grpo_required or verl_automodel_required or te_required
         dependency_parts: list[str] = []
         if base_stack_required:
             if skip_apex_liger_bootstrap:
@@ -3383,8 +3157,6 @@ def ensure_runtime_training_dependencies(
             dependency_parts.append("Transformer Engine")
         if grpo_required:
             dependency_parts.append("GRPO runtime packages")
-        if rlcsd_required:
-            dependency_parts.append("RLCSD/verl runtime packages")
         if verl_automodel_required:
             dependency_parts.append("VERL automodel FP8 runtime packages")
         if prime_rl_required:
@@ -3399,10 +3171,8 @@ def ensure_runtime_training_dependencies(
                 "coordination_id": runtime_fetch_coordination_id(),
                 "transformer_engine_runtime_dep": te_required,
                 "grpo_runtime_deps": grpo_required,
-                "rlcsd_runtime_deps": rlcsd_required,
                 "verl_automodel_runtime_deps": verl_automodel_required,
                 "prime_rl_runtime_deps": prime_rl_required,
-                "rlcsd_dir": str(rlcsd_dir) if rlcsd_dir else "",
                 "verl_dir": str(verl_dir) if verl_dir else "",
                 "prime_rl_dir": str(prime_rl_dir) if prime_rl_dir else "",
             },
@@ -3426,10 +3196,8 @@ def ensure_runtime_training_dependencies(
                     "coordination_id": runtime_fetch_coordination_id(),
                     "transformer_engine_runtime_dep": te_required,
                     "grpo_runtime_deps": grpo_required,
-                    "rlcsd_runtime_deps": rlcsd_required,
                     "verl_automodel_runtime_deps": verl_automodel_required,
                     "prime_rl_runtime_deps": prime_rl_required,
-                    "rlcsd_dir": str(rlcsd_dir) if rlcsd_dir else "",
                     "verl_dir": str(verl_dir) if verl_dir else "",
                     "prime_rl_dir": str(prime_rl_dir) if prime_rl_dir else "",
                     "error": redact_secret(str(exc)),
@@ -3446,10 +3214,8 @@ def ensure_runtime_training_dependencies(
                 "megatron_dir": str(megatron_dir),
                 "transformer_engine_runtime_dep": te_required,
                 "grpo_runtime_deps": grpo_required,
-                "rlcsd_runtime_deps": rlcsd_required,
                 "verl_automodel_runtime_deps": verl_automodel_required,
                 "prime_rl_runtime_deps": prime_rl_required,
-                "rlcsd_dir": str(rlcsd_dir) if rlcsd_dir else "",
                 "verl_dir": str(verl_dir) if verl_dir else "",
                 "prime_rl_dir": str(prime_rl_dir) if prime_rl_dir else "",
             },
@@ -3458,9 +3224,7 @@ def ensure_runtime_training_dependencies(
         prepend_path(site_dir / "bin", site_dir.parent.parent.parent / "bin")
         prepend_runtime_library_path(site_dir)
         if verl_dir:
-            prepend_pythonpath(site_dir, megatron_dir, verl_dir, *( [rlcsd_dir] if rlcsd_dir else [] ))
-        elif rlcsd_dir:
-            prepend_pythonpath(site_dir, megatron_dir, rlcsd_dir / "third_party" / "verl", rlcsd_dir)
+            prepend_pythonpath(site_dir, megatron_dir, verl_dir)
         elif prime_rl_dir:
             prepend_pythonpath(site_dir, megatron_dir, prime_rl_dir / "packages" / "prime-rl-configs" / "src", prime_rl_dir / "src")
         else:
@@ -3488,13 +3252,8 @@ def ensure_runtime_training_dependencies(
         if status == "ready":
             prepared_site = Path(str(state.get("site_dir", site_dir)))
             prepared_megatron = Path(str(state.get("megatron_dir", megatron_dir)))
-            prepared_rlcsd_value = str(state.get("rlcsd_dir", "") or "")
-            prepared_rlcsd = Path(prepared_rlcsd_value) if prepared_rlcsd_value else rlcsd_dir
             prepared_verl_value = str(state.get("verl_dir", "") or "")
             prepared_verl = Path(prepared_verl_value) if prepared_verl_value else verl_dir
-            if prepared_rlcsd:
-                os.environ[PREPARED_RLCSD_ENV] = str(prepared_rlcsd)
-                os.environ["RLCSD_DIR"] = str(prepared_rlcsd)
             if prepared_verl:
                 os.environ[PREPARED_VERL_ENV] = str(prepared_verl)
                 os.environ["VERL_DIR"] = str(prepared_verl)
@@ -3504,7 +3263,6 @@ def ensure_runtime_training_dependencies(
                 os.environ[PREPARED_PRIME_RL_ENV] = str(prepared_prime_rl)
                 os.environ["PRIME_RL_DIR"] = str(prepared_prime_rl)
             state_grpo_required = bool(state.get("grpo_runtime_deps", False))
-            state_rlcsd_required = bool(state.get("rlcsd_runtime_deps", False))
             state_verl_automodel_required = bool(state.get("verl_automodel_runtime_deps", False))
             state_prime_rl_required = bool(state.get("prime_rl_runtime_deps", False))
             state_te_required = bool(state.get("transformer_engine_runtime_dep", False))
@@ -3530,12 +3288,6 @@ def ensure_runtime_training_dependencies(
                     raise RuntimeError(
                         f"Runtime GRPO import verification failed on node {node_rank}:\n{grpo_details}"
                     )
-            if state_rlcsd_required:
-                rlcsd_ok, rlcsd_details = runtime_dependency_probe(prepared_site, prepared_megatron, module="rlcsd")
-                if not rlcsd_ok:
-                    raise RuntimeError(
-                        f"Runtime RLCSD/verl import verification failed on node {node_rank}:\n{rlcsd_details}"
-                    )
             if state_verl_automodel_required:
                 automodel_ok, automodel_details = runtime_dependency_probe(
                     prepared_site,
@@ -3554,14 +3306,7 @@ def ensure_runtime_training_dependencies(
             prepend_path(prepared_site / "bin", prepared_site.parent.parent.parent / "bin")
             prepend_runtime_library_path(prepared_site)
             if prepared_verl:
-                prepend_pythonpath(
-                    prepared_site,
-                    prepared_megatron,
-                    prepared_verl,
-                    *( [prepared_rlcsd] if prepared_rlcsd else [] ),
-                )
-            elif prepared_rlcsd:
-                prepend_pythonpath(prepared_site, prepared_megatron, prepared_rlcsd / "third_party" / "verl", prepared_rlcsd)
+                prepend_pythonpath(prepared_site, prepared_megatron, prepared_verl)
             elif prepared_prime_rl:
                 prepend_pythonpath(
                     prepared_site,
@@ -3576,8 +3321,6 @@ def ensure_runtime_training_dependencies(
                 dependency_labels.append("Transformer Engine")
             if state_grpo_required:
                 dependency_labels.append("GRPO")
-            if state_rlcsd_required:
-                dependency_labels.append("RLCSD/verl")
             if state_verl_automodel_required:
                 dependency_labels.append("VERL automodel FP8")
             if state_prime_rl_required:
@@ -3596,7 +3339,7 @@ def ensure_runtime_training_dependencies(
 def coordinated_fetch_runtime_repos(
     wrapper_args: argparse.Namespace,
     forwarded_args: list[str],
-) -> tuple[Path, Path, Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path]:
     operator_mode = forwarded_operator_mode_enabled(forwarded_args)
     node_rank = None if operator_mode else resolve_wrapper_node_rank(forwarded_args)
     state_path, fingerprint = runtime_fetch_state_path(wrapper_args)
@@ -3613,7 +3356,7 @@ def coordinated_fetch_runtime_repos(
             },
         )
         try:
-            engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir = fetch_runtime_repos(
+            engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir = fetch_runtime_repos(
                 wrapper_args,
                 forwarded_args,
             )
@@ -3621,7 +3364,6 @@ def coordinated_fetch_runtime_repos(
                 engine_path,
                 open_instruct_dir,
                 olmo_core_dir,
-                rlcsd_dir,
                 verl_dir,
                 prime_rl_dir,
             )
@@ -3649,13 +3391,12 @@ def coordinated_fetch_runtime_repos(
                 "engine_path": str(engine_path),
                 "open_instruct_dir": str(open_instruct_dir),
                 "olmo_core_dir": str(olmo_core_dir),
-                "rlcsd_dir": str(rlcsd_dir),
                 "verl_dir": str(verl_dir),
                 "prime_rl_dir": str(prime_rl_dir),
             },
         )
         log(f"Runtime repo fetch complete; marker={state_path}")
-        return engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir
+        return engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir
 
     timeout = runtime_fetch_timeout(wrapper_args)
     poll_interval = runtime_fetch_poll_interval(wrapper_args)
@@ -3692,17 +3433,17 @@ def coordinated_fetch_runtime_repos(
             raise RuntimeError(f"node_rank=0 runtime repo fetch failed: {state.get('error', '<no error>')}")
         if status == "ready":
             try:
-                engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir = runtime_paths_from_state(state)
+                engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir = runtime_paths_from_state(state)
             except KeyError:
                 time.sleep(poll_interval)
                 continue
-            missing = validate_runtime_paths(engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir)
+            missing = validate_runtime_paths(engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir)
             if missing:
                 log(f"node_rank={node_rank} waiting for ready runtime paths: {missing}")
                 time.sleep(poll_interval)
                 continue
             log(f"node_rank={node_rank} using runtime repos prepared by node_rank=0")
-            return engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir
+            return engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir
         time.sleep(poll_interval)
     raise TimeoutError(
         f"Timed out after {timeout:.0f}s waiting for node_rank=0 runtime repo fetch marker {state_path}"
@@ -3723,29 +3464,28 @@ def main(argv: list[str] | None = None) -> int:
     if fetch_update:
         prepared_repos = prepared_runtime_repos_from_env()
         if prepared_repos is not None:
-            engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir = prepared_repos
-            set_prepared_runtime_env(engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir)
+            engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir = prepared_repos
+            set_prepared_runtime_env(engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir)
             log(f"Using prepared runtime repos after wrapper self-update: {engine_path.parent.parent}")
             ensure_runtime_training_dependencies(wrapper_args, forwarded_args)
-            exec_engine(engine_path, forwarded_args, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir)
+            exec_engine(engine_path, forwarded_args, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir)
             return 0
-        engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir = coordinated_fetch_runtime_repos(
+        engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir = coordinated_fetch_runtime_repos(
             wrapper_args,
             forwarded_args,
         )
-        set_prepared_runtime_env(engine_path, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir)
+        set_prepared_runtime_env(engine_path, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir)
         maybe_reexec_runtime_wrapper(
             wrapper_args,
             raw_args,
             engine_path,
             open_instruct_dir,
             olmo_core_dir,
-            rlcsd_dir,
             verl_dir,
             prime_rl_dir,
         )
         ensure_runtime_training_dependencies(wrapper_args, forwarded_args)
-        exec_engine(engine_path, forwarded_args, open_instruct_dir, olmo_core_dir, rlcsd_dir, verl_dir, prime_rl_dir)
+        exec_engine(engine_path, forwarded_args, open_instruct_dir, olmo_core_dir, verl_dir, prime_rl_dir)
     else:
         engine_path = baked_engine_path()
         log(f"Using baked train engine {engine_path}")
