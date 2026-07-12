@@ -738,7 +738,7 @@ COMMON_ARGS=(
   --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-1}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
-  --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
+  --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-true}"
   --prime_trainer_fp8 "${PRIME_TRAINER_FP8:-true}"
   # Compiling every decoder layer during the first full-vocab backward can
   # exceed the one-node container's host-memory cgroup. Keep compilation
