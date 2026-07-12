@@ -686,7 +686,7 @@ COMMON_ARGS=(
   --prime_checkpoint_weights_only "${PRIME_CHECKPOINT_WEIGHTS_ONLY:-true}"
   --prime_checkpoint_wait_for_weights_timeout "${PRIME_CHECKPOINT_WAIT_FOR_WEIGHTS_TIMEOUT:-7200}"
   --prime_skip_model_check true
-  --prime_temperature 1.0
+  --prime_temperature "${PRIME_TEMPERATURE:-0.7}"
   --prime_top_p 0.95
   --with_tracking
   --wandb_mode online
