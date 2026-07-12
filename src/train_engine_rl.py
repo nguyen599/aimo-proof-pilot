@@ -254,9 +254,20 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
                 "--prime_proof_dataset_path or --dataset_path is required when using "
                 "--prime_env_id proof-opd-env."
             )
+        dataset_mode = str(args.prime_proof_dataset_mode).strip().lower()
+        single_turn_mode = dataset_mode in {"single", "single_turn", "per_turn"}
         refine_rounds = args.prime_proof_refine_rounds
-        if args.prime_algorithm == "opd" and refine_rounds == 0:
+        if args.prime_algorithm == "opd" and refine_rounds == 0 and not single_turn_mode:
             refine_rounds = 1
+        if single_turn_mode and args.prime_group_size != 1:
+            raise ValueError(
+                "--prime_proof_dataset_mode single requires --prime_group_size 1."
+            )
+        if single_turn_mode and args.prime_proof_candidate_gate:
+            raise ValueError(
+                "--prime_proof_candidate_gate is incompatible with "
+                "--prime_proof_dataset_mode single."
+            )
         if args.prime_proof_candidate_gate:
             if args.prime_group_size <= 1:
                 raise ValueError(
@@ -271,6 +282,7 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
             "name": effective_env_name if effective_env_name != "math" else "proof_math",
             "args": {
                 "dataset_path": dataset_path,
+                "dataset_mode": dataset_mode,
                 "problem_column": args.prime_proof_problem_column,
                 "solution_column": args.prime_proof_solution_column,
                 "max_examples": args.prime_proof_max_examples,
@@ -1132,6 +1144,11 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_math_min_avg_reward", type=float, default=None)
     parser.add_argument("--prime_math_max_avg_reward", type=float, default=None)
     parser.add_argument("--prime_proof_dataset_path", default=None)
+    parser.add_argument(
+        "--prime_proof_dataset_mode",
+        default="mixed",
+        choices=("mixed", "single", "single_turn", "per_turn", "verifiable", "verifiable_eval", "eval_verifiable"),
+    )
     parser.add_argument("--prime_proof_problem_column", default="auto")
     parser.add_argument("--prime_proof_solution_column", default="auto")
     parser.add_argument("--prime_proof_max_examples", type=int, default=None)

@@ -60,6 +60,7 @@ VERIFIABLE_ANSWER_MATCH_METHOD_IDS = {
     "normalized_exact": 2.0,
     "math_equiv": 3.0,
 }
+SINGLE_TURN_STAGES = frozenset({"prove", "verify", "select", "refine"})
 
 VERIFIABLE_BOXED_INSTRUCTION = """For this problem, the final answer is directly checkable. In your `## Solution` section, include the final answer exactly once in the form `\\boxed{...}` before your `## Self Evaluation` section. The boxed value should contain only the final answer, not explanatory text."""
 
@@ -667,7 +668,11 @@ def log_llm_input(stage: str, prompt: str, *, state: Any | None = None) -> None:
     )
 
 
-def read_dataset_rows(dataset_path: str | Path) -> list[dict[str, Any]]:
+def read_dataset_rows(
+    dataset_path: str | Path,
+    *,
+    columns: list[str] | None = None,
+) -> list[dict[str, Any]]:
     path = Path(dataset_path).expanduser()
     if not path.exists():
         raise FileNotFoundError(f"Proof-OPD dataset not found: {path}")
@@ -694,7 +699,13 @@ def read_dataset_rows(dataset_path: str | Path) -> list[dict[str, Any]]:
     import pandas as pd
 
     if suffix == ".parquet":
-        frame = pd.read_parquet(path)
+        selected_columns = columns
+        if selected_columns is not None:
+            import pyarrow.parquet as pq
+
+            available_columns = set(pq.ParquetFile(path).schema.names)
+            selected_columns = [column for column in selected_columns if column in available_columns]
+        frame = pd.read_parquet(path, columns=selected_columns)
     elif suffix in {".csv", ".tsv"}:
         frame = pd.read_csv(path, sep="\t" if suffix == ".tsv" else ",")
     else:
@@ -793,6 +804,99 @@ def normalize_dataset_rows(
             break
     if not normalized:
         raise ValueError("Proof-OPD dataset produced zero usable rows.")
+    return normalized
+
+
+def normalize_single_turn_dataset_rows(
+    rows: list[dict[str, Any]],
+    *,
+    max_examples: int | None,
+) -> list[dict[str, Any]]:
+    """Normalize pre-rendered OPD stage prompts without modifying their messages."""
+
+    normalized: list[dict[str, Any]] = []
+    skipped_stages: dict[str, int] = {}
+    invalid_messages = 0
+    for source_index, raw_row in enumerate(rows):
+        row = dict(raw_row)
+        stage = cell_to_text(row.get("stage")).lower()
+        if stage not in SINGLE_TURN_STAGES:
+            skipped_stages[stage or "<missing>"] = skipped_stages.get(stage or "<missing>", 0) + 1
+            continue
+
+        messages = json_loads_maybe(row.get("messages_json"))
+        if not isinstance(messages, list) or not messages:
+            invalid_messages += 1
+            continue
+        if any(
+            not isinstance(message, dict)
+            or not cell_to_text(message.get("role"))
+            or not isinstance(message.get("content"), str)
+            for message in messages
+        ):
+            invalid_messages += 1
+            continue
+
+        # Copy only the chat fields accepted by Verifiers. The source prompts are
+        # otherwise preserved byte-for-byte and receive no additional template.
+        prompt = [
+            {"role": str(message["role"]), "content": message["content"]}
+            for message in messages
+        ]
+        problem = cell_to_text(row.get("problem"))
+        problem_id = cell_to_text(row.get("problem_id"))
+        run_id = cell_to_text(row.get("run_id"))
+        candidate_id = cell_to_text(row.get("candidate_id"))
+        verifier_idx = cell_to_text(row.get("verifier_idx"))
+        identity_parts = [
+            part
+            for part in (run_id, problem_id, stage, candidate_id, verifier_idx, str(source_index))
+            if part
+        ]
+        task_id = ":".join(identity_parts)
+        info = {
+            "stage": stage,
+            "task_type": "opd_single_turn",
+            "task_id": task_id,
+            "source_index": source_index,
+            "pipeline": cell_to_text(row.get("pipeline")),
+            "run_id": run_id,
+            "problem_id": problem_id,
+            "candidate_id": candidate_id,
+            "verifier_idx": verifier_idx,
+        }
+        answer = {
+            "problem": problem,
+            "stage": stage,
+            "task_type": "opd_single_turn",
+        }
+        normalized.append(
+            {
+                "prompt": prompt,
+                "problem": problem,
+                "answer": json.dumps(answer, ensure_ascii=False),
+                "dataset": "proof_opd_single_turn",
+                "task_id": task_id,
+                "source_index": source_index,
+                "task_type": "opd_single_turn",
+                "stage": stage,
+                "info": info,
+            }
+        )
+        if max_examples is not None and max_examples > 0 and len(normalized) >= max_examples:
+            break
+
+    if not normalized:
+        raise ValueError(
+            "Single-turn Proof-OPD dataset produced zero usable rows; expected "
+            "messages_json and stage in prove, verify, select, or refine."
+        )
+    LOGGER.info(
+        "Normalized single-turn Proof-OPD rows: usable=%d invalid_messages=%d skipped_stages=%s",
+        len(normalized),
+        invalid_messages,
+        skipped_stages,
+    )
     return normalized
 
 
@@ -963,6 +1067,55 @@ class ProofOPDRubric(vf.Rubric):
             return float(value)
         except (TypeError, ValueError):
             return default
+
+
+class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
+    """Run one pre-rendered OPD stage prompt and terminate immediately."""
+
+    async def setup_state(self, state: vf.State) -> None:
+        info = dict(state.get("info") or {})
+        state["proof_opd_stage"] = str(info.get("stage") or state.get("stage") or "single")
+
+    async def get_prompt_messages(self, state: vf.State) -> vf.Messages:
+        messages = await super().get_prompt_messages(state)
+        stage = str(state.get("proof_opd_stage") or "single")
+        log_llm_input(f"single_{stage}", completion_to_text(messages), state=state)
+        return messages
+
+    @vf.cleanup(priority=-10)
+    async def attach_wandb_trace(self, state: vf.State) -> None:
+        info = dict(state.get("info") or {})
+        stage = str(state.get("proof_opd_stage") or info.get("stage") or "single")
+        raw_output, is_truncated, finish_reason = "", False, ""
+        trajectory = state.get("trajectory") or []
+        if trajectory:
+            raw_output = trajectory_step_text(trajectory[-1])
+            is_truncated = trajectory_step_is_truncated(trajectory[-1])
+            finish_reason = trajectory_step_finish_reason(trajectory[-1])
+        info["proof_opd_trace"] = {
+            "task_id": info.get("task_id") or state.get("task_id"),
+            "source_index": info.get("source_index") or state.get("source_index"),
+            "task_type": "opd_single_turn",
+            "stage": stage,
+            "problem": clipped_trace_text(state.get("problem", "")),
+            "reward": float(state.get("reward") or 0.0),
+            "finish_reason": finish_reason,
+            "is_truncated": is_truncated,
+            "stage_records": [
+                {
+                    "stage": stage,
+                    "round_index": 0,
+                    "verify_index": 0,
+                    "raw_chars": len(raw_output),
+                    "raw_output_excerpt": clipped_trace_text(raw_output),
+                    "is_truncated": is_truncated,
+                    "finish_reason": finish_reason,
+                    "source": "single_turn_dataset",
+                }
+            ],
+            "raw_output_excerpt": clipped_trace_text(raw_output),
+        }
+        state["info"] = info
 
 
 class ProofOPDEnv(vf.MultiTurnEnv):
@@ -2387,10 +2540,29 @@ def load_environment(
     candidate_continue_count: int = 4,
     **_: Any,
 ) -> vf.Environment:
-    proof_rows = read_dataset_rows(dataset_path)
     normalized_mode = str(dataset_mode or "mixed").strip().lower()
+    use_single_turn = normalized_mode in {"single", "single_turn", "per_turn"}
     use_verifiable_eval = normalized_mode in {"verifiable", "verifiable_eval", "eval_verifiable"}
-    if use_verifiable_eval:
+    single_turn_columns = [
+        "pipeline",
+        "run_id",
+        "problem_id",
+        "problem",
+        "stage",
+        "candidate_id",
+        "verifier_idx",
+        "messages_json",
+    ]
+    proof_rows = read_dataset_rows(
+        dataset_path,
+        columns=single_turn_columns if use_single_turn else None,
+    )
+    if use_single_turn:
+        rows = normalize_single_turn_dataset_rows(
+            proof_rows,
+            max_examples=max_examples,
+        )
+    elif use_verifiable_eval:
         rows = normalize_dataset_rows(
             proof_rows,
             problem_column=problem_column,
@@ -2424,6 +2596,13 @@ def load_environment(
         task_counts,
     )
     dataset = Dataset.from_list(rows)
+    if use_single_turn:
+        return ProofOPDSingleTurnEnv(
+            dataset=dataset,
+            eval_dataset=dataset,
+            rubric=ProofOPDRubric(),
+            message_type="chat",
+        )
     env_cls = ProofOPDVerifiableEvalEnv if use_verifiable_eval else ProofOPDEnv
     return env_cls(
         dataset=dataset,

@@ -156,6 +156,23 @@ For verifiable training rows, the proof-generation prompt additionally asks the 
 
 Verifier and meta-verifier calls are local model calls in this OPD setup, not OpenRouter/API calls. `--prime_proof_judge_backend none` is expected for the current command.
 
+### Pre-rendered single-turn OPD data
+
+Use `--prime_proof_dataset_mode single` for a parquet/JSON/CSV dataset whose rows already contain complete chat prompts in `messages_json`. This mode accepts only `stage=prove`, `verify`, `select`, or `refine`; `plain`, `meta`, unknown stages, and malformed message rows are excluded. Each accepted row makes exactly one model call and then ends, so no proof parser, prompt template, candidate gate, verifier chaining, or refinement chaining is applied by the environment.
+
+The source `messages_json` must decode to a non-empty list of `{role, content}` messages. Existing system messages and user instructions are passed to vLLM unchanged. Prime-RL must use one rollout per row:
+
+```bash
+export PRIME_PROOF_DATASET_MODE=single
+export PRIME_OPD_DATASET_PATH=/path/to/per_turn.parquet
+export PRIME_GROUP_SIZE=1
+export PRIME_PROOF_CANDIDATE_GATE=false
+
+bash operator_commands/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh
+```
+
+The command derives `PRIME_GROUP_SIZE=1` and disables the candidate gate automatically when `PRIME_PROOF_DATASET_MODE` is `single`, `single_turn`, or `per_turn`. Explicit incompatible values fail during config generation instead of duplicating a pre-rendered row.
+
 Invalid-output behavior:
 
 - If proof generation reaches the token limit or omits a closed thinking block, verifier/meta stages are skipped.

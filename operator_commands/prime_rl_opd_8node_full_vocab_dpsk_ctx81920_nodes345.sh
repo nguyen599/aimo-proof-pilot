@@ -487,7 +487,14 @@ else
 fi
 MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
-GROUP_SIZE="${PRIME_GROUP_SIZE:-2}"
+PROOF_DATASET_MODE="${PRIME_PROOF_DATASET_MODE:-mixed}"
+if [[ "${PROOF_DATASET_MODE}" == "single" || "${PROOF_DATASET_MODE}" == "single_turn" || "${PROOF_DATASET_MODE}" == "per_turn" ]]; then
+  GROUP_SIZE="${PRIME_GROUP_SIZE:-1}"
+  CANDIDATE_GATE="${PRIME_PROOF_CANDIDATE_GATE:-false}"
+else
+  GROUP_SIZE="${PRIME_GROUP_SIZE:-2}"
+  CANDIDATE_GATE="${PRIME_PROOF_CANDIDATE_GATE:-true}"
+fi
 CANDIDATE_CONTINUE_COUNT="${PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4}"
 PACKED_SEQUENCES_PER_STEP="${PRIME_PACKED_SEQUENCES_PER_STEP:-64}"
 TOKEN_BATCH_SIZE=$((CTX_LEN * PACKED_SEQUENCES_PER_STEP))
@@ -500,7 +507,7 @@ if [[ -n "${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-}" ]]; then
 else
   echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (${INFLIGHT_PER_POLICY_NODE}/policy_node)"
 fi
-echo "[prime-opd-3node] candidate_gate group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT} proof_only=$((GROUP_SIZE - CANDIDATE_CONTINUE_COUNT))"
+echo "[prime-opd-3node] proof_dataset_mode=${PROOF_DATASET_MODE} candidate_gate=${CANDIDATE_GATE} group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT}"
 if (( MAX_INFLIGHT_QUESTIONS > 0 )); then
   echo "[prime-opd-3node] max_inflight_questions=${MAX_INFLIGHT_QUESTIONS} (fresh questions pause at cap; continuation turns remain eligible)"
 fi
@@ -702,6 +709,7 @@ COMMON_ARGS=(
   --prime_env_id proof-opd-env
   --prime_env_name proof_math
   --prime_proof_dataset_path "${DATASET_PATH}"
+  --prime_proof_dataset_mode "${PROOF_DATASET_MODE}"
   --prime_proof_verifiable_dataset_path "${VERIFIABLE_DATASET_PATH}"
   --prime_proof_verifiable_fraction "${PRIME_OPD_VERIFIABLE_FRACTION:-0.20}"
   --prime_proof_verifiable_answer_column auto
@@ -715,7 +723,7 @@ COMMON_ARGS=(
   --prime_proof_refine_rounds "${PRIME_PROOF_REFINE_ROUNDS:-0}"
   --prime_proof_refine_review_n "${PRIME_PROOF_REFINE_REVIEW_N:-2}"
   --prime_proof_selector_top_k "${PRIME_PROOF_SELECTOR_TOP_K:-3}"
-  --prime_proof_candidate_gate true
+  --prime_proof_candidate_gate "${CANDIDATE_GATE}"
   --prime_proof_candidate_continue_count "${CANDIDATE_CONTINUE_COUNT}"
   --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}"
   --prime_eval_interval "${PRIME_OPD_EVAL_INTERVAL:-50}"
