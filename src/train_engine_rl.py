@@ -1289,7 +1289,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_infer_gpus", type=int, default=1)
     parser.add_argument("--prime_gpus_per_node", type=int, default=2)
     parser.add_argument("--prime_trainer_model_impl", default="hf", choices=("hf", "custom", "auto"))
-    parser.add_argument("--prime_trainer_attn", default="olmo3_sink_fa3")
+    parser.add_argument("--prime_trainer_attn", default="olmo3_sink_fa2")
     parser.add_argument("--prime_trainer_fsdp_cpu_offload", type=parse_bool, default=False)
     parser.add_argument("--prime_trainer_optim_cpu_offload", type=parse_bool, default=True)
     parser.add_argument("--prime_trainer_optimization_dtype", default="bfloat16", choices=("bfloat16", "float32"))

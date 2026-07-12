@@ -15,6 +15,7 @@ REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-${APP_DIR}/requirements.txt}"
 INSTALL_SINGULARITY_CE="${INSTALL_SINGULARITY_CE:-0}"
 INSTALL_APPTAINER_IN_IMAGE="${INSTALL_APPTAINER_IN_IMAGE:-0}"
 INSTALL_MODAL_SIMP_EXTRAS="${INSTALL_MODAL_SIMP_EXTRAS:-0}"
+INSTALL_MAGI_ATTENTION="${INSTALL_MAGI_ATTENTION:-1}"
 
 OPEN_INSTRUCT_REPO="${OPEN_INSTRUCT_REPO:-https://github.com/nguyen599/open-instruct.git}"
 OPEN_INSTRUCT_REF="${OPEN_INSTRUCT_REF:-main}"
@@ -86,6 +87,10 @@ install_selected_nccl_wheel
 
 if [ "${INSTALL_MODAL_SIMP_EXTRAS}" = "1" ]; then
     bash "${APP_DIR}/install_modal_simp_extras.sh"
+fi
+
+if [ "${INSTALL_MAGI_ATTENTION}" = "1" ]; then
+    PYTHON_BIN="$(command -v python)" bash "${APP_DIR}/install_magi_attention.sh"
 fi
 
 if [ "${INSTALL_SINGULARITY_CE}" = "1" ]; then

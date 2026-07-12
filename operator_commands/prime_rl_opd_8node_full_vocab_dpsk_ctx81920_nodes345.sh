@@ -742,7 +742,7 @@ COMMON_ARGS=(
   --prime_max_off_policy_steps "${MAX_OFF_POLICY}"
   --prime_gpus_per_node 8
   --prime_trainer_model_impl custom
-  --prime_trainer_attn olmo3_sink_fa3
+  --prime_trainer_attn "${PRIME_TRAINER_ATTN:-olmo3_sink_fa2}"
   --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-1}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false

@@ -238,6 +238,14 @@ DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS = (
         "https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/"
         "deep_gemm-2.5.0+891d57b-cp312-cp312-linux_x86_64.whl"
     ),
+    (
+        "magi-attention @ git+https://github.com/SandAI-org/MagiAttention.git@"
+        "efaabdbcbc53928debf2fcde189c45d6646210c6"
+    ),
+    (
+        "magi-attn-extensions @ git+https://github.com/SandAI-org/MagiAttention.git@"
+        "efaabdbcbc53928debf2fcde189c45d6646210c6#subdirectory=extensions"
+    ),
 )
 DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
     # Prime-RL/vLLM 0.24 currently trips OLMo3Sink RoPE loading with dict
@@ -276,6 +284,10 @@ DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
     # environments, even when the selected environment does not use a sandbox.
     "prime-sandboxes>=0.2.27",
     "weave",
+    # MagiAttention extensions currently import an optional DSA test helper
+    # from package __init__, which assumes these NGC image utilities exist.
+    "debugpy>=1.8.0",
+    "expecttest>=0.3.0",
 )
 PROTECTED_RUNTIME_OVERLAY_PACKAGES = (
     "flash_attn",
@@ -3218,6 +3230,9 @@ def prepare_runtime_training_dependencies(
         log(f"Runtime VERL automodel FP8 imports verified:\n{automodel_details}")
 
     if prime_rl_required:
+        # Prime-RL uses Magi's Python/Triton sink correction only. Avoid building
+        # Magi's unrelated distributed CUDA extensions in each runtime overlay.
+        os.environ.setdefault("MAGI_ATTENTION_SKIP_CUDA_BUILD", "1")
         prime_rl_dir_value = os.environ.get(PREPARED_PRIME_RL_ENV) or os.environ.get("PRIME_RL_DIR")
         if not prime_rl_dir_value:
             raise RuntimeError("Prime-RL backend requires PRIME_RL_DIR from runtime fetch or --prime_rl_dir")

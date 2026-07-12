@@ -185,7 +185,7 @@ echo "[prime-opd] checkpoint_interval=${CHECKPOINT_INTERVAL} checkpoint_keep_las
   --prime_infer_gpus "${INFER_GPUS}" \
   --prime_gpus_per_node "${GPUS_PER_NODE}" \
   --prime_trainer_model_impl custom \
-  --prime_trainer_attn olmo3_sink_fa3 \
+  --prime_trainer_attn "${PRIME_TRAINER_ATTN:-olmo3_sink_fa2}" \
   --prime_trainer_context_parallel_size "${TRAINER_CP}" \
   --prime_trainer_cp_style ulysses \
   --prime_trainer_fsdp_cpu_offload false \
