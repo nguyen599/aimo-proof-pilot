@@ -232,12 +232,14 @@ TEACHER_GPU_IDS="${PRIME_OPD_TEACHER_GPU_IDS:-${DEFAULT_TEACHER_GPU_IDS}}"
 TEACHER_VLLM_EXTRA_DEFAULT="$(
   TEACHER_TP="${TEACHER_TP}" \
   TEACHER_KV_CACHE_MEMORY_BYTES="${PRIME_OPD_TEACHER_KV_CACHE_MEMORY_BYTES:-0}" \
+  TEACHER_CPU_OFFLOAD_GB="${PRIME_OPD_TEACHER_CPU_OFFLOAD_GB:-0}" \
   python - <<'PY'
 import json
 import os
 
 tp = int(os.environ["TEACHER_TP"])
 kv_cache_memory_bytes = int(os.environ.get("TEACHER_KV_CACHE_MEMORY_BYTES", "0") or "0")
+cpu_offload_gb = float(os.environ.get("TEACHER_CPU_OFFLOAD_GB", "0") or "0")
 extra = {
     "kv_cache_dtype": "fp8",
     "block_size": 256,
@@ -253,6 +255,8 @@ extra = {
 }
 if kv_cache_memory_bytes > 0:
     extra["kv_cache_memory_bytes"] = kv_cache_memory_bytes
+if cpu_offload_gb > 0:
+    extra["cpu_offload_gb"] = cpu_offload_gb
 if tp > 2:
     extra["disable_custom_all_reduce"] = True
 print(json.dumps(extra, separators=(",", ":")))
