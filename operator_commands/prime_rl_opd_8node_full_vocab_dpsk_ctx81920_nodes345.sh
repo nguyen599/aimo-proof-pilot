@@ -526,7 +526,7 @@ if (( SINGLE_NODE_MODE == 1 )); then
     fi
   done
 fi
-echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} max_num_seqs=${POLICY_MAX_NUM_SEQS} (${POLICY_REQS_PER_DP}/dp_rank) dp_rpc_port=${POLICY_DP_RPC_PORT}"
+echo "[prime-opd-3node] policy_topology tp=${POLICY_TP} dp=${POLICY_DP} api_servers=${POLICY_API_SERVER_COUNT} max_num_seqs_per_dp_rank=${POLICY_MAX_NUM_SEQS} total_sequence_capacity=$((POLICY_DP * POLICY_MAX_NUM_SEQS)) dp_rpc_port=${POLICY_DP_RPC_PORT}"
 echo "[prime-opd-3node] trainer_gpus=${TRAIN_GPU_COUNT} teacher_topology tp=${TEACHER_TP} dp=${TEACHER_DP} gpu_ids=${TEACHER_GPU_IDS} teacher_dp_rpc_port=${TEACHER_DP_RPC_PORT}"
 DFLASH_ENABLE="${PRIME_DFLASH_ENABLE:-0}"
 DFLASH_DRAFT_MODEL=""
