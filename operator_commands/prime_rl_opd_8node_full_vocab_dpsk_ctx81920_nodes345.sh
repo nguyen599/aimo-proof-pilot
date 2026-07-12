@@ -184,6 +184,18 @@ if [[ -x /usr/local/cuda/bin/nvcc ]]; then
   export PATH="${CUDA_HOME}/bin:${PATH}"
 fi
 
+# The pinned vLLM wheel is built against CUDA 13 while some raw hosts expose a
+# CUDA 12.x toolkit. NVIDIA's pip runtime can coexist with that toolkit, but
+# its library directory is not added to the dynamic loader path automatically.
+CUDA13_RUNTIME_DIR="${PRIME_CUDA13_RUNTIME_LIB_DIR:-}"
+if [[ -z "${CUDA13_RUNTIME_DIR}" ]]; then
+  CUDA13_RUNTIME_DIR="$(find /opt /root/.local -path '*/site-packages/nvidia/cu13/lib' -type d -print -quit 2>/dev/null || true)"
+fi
+if [[ -n "${CUDA13_RUNTIME_DIR}" ]]; then
+  export LD_LIBRARY_PATH="${CUDA13_RUNTIME_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+  echo "[prime-opd] using CUDA 13 pip runtime libraries from ${CUDA13_RUNTIME_DIR}"
+fi
+
 export NCCL_NVLS_ENABLE="${NCCL_NVLS_ENABLE:-1}"
 export NCCL_IB_DISABLE="${NCCL_IB_DISABLE:-0}"
 export NCCL_IB_PCI_RELAXED_ORDERING="${NCCL_IB_PCI_RELAXED_ORDERING:-1}"
