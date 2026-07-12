@@ -140,6 +140,22 @@ else:
     raise RuntimeError(f"unexpected Transformer Engine core installed: {unexpected_te_core}")
 PY
 
+# Generic Docker GPU providers expose container port 22 but do not inject an SSH daemon into
+# arbitrary images. Keep SSH key-only and let the provider mount /root/.ssh/authorized_keys; an
+# explicit SSH_PUBLIC_KEY environment variable is also supported for providers that only pass the
+# key through environment configuration.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssh-server && \
+    mkdir -p /run/sshd /root/.ssh && \
+    chmod 700 /root/.ssh && \
+    printf '%s\n' \
+        'PermitRootLogin prohibit-password' \
+        'PasswordAuthentication no' \
+        'KbdInteractiveAuthentication no' \
+        'PubkeyAuthentication yes' \
+        > /etc/ssh/sshd_config.d/99-aimo-proof-pilot.conf && \
+    rm -rf /var/lib/apt/lists/*
+
 # --- Remote-shell daemon as the default entrypoint (crash-resilient supervisor). Training runs
 # THROUGH the relay shell sessions the daemon exposes (open a shell, then run /app/train.py ...),
 # instead of train.py being PID 1. The daemon is outbound-only HTTPS to a private HF Space relay
@@ -159,6 +175,16 @@ set +e
 trap '' TERM INT HUP PIPE QUIT      # ignore graceful signals; only SIGKILL ends this loop
 LOGS=/tmp/imochallenge/logs; LOG="$LOGS/relay-daemon.log"
 mkdir -p "$LOGS" 2>/dev/null
+mkdir -p /run/sshd /root/.ssh 2>/dev/null
+chmod 700 /root/.ssh 2>/dev/null
+SSH_AUTHORIZED_KEY="${SSH_PUBLIC_KEY:-${PUBLIC_KEY:-${SSH_PUB_KEY:-}}}"
+if [ -n "$SSH_AUTHORIZED_KEY" ]; then
+    touch /root/.ssh/authorized_keys
+    grep -qxF "$SSH_AUTHORIZED_KEY" /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' "$SSH_AUTHORIZED_KEY" >> /root/.ssh/authorized_keys
+    chmod 600 /root/.ssh/authorized_keys
+fi
+ssh-keygen -A >/dev/null 2>&1
+/usr/sbin/sshd -E "$LOGS/sshd.log" || printf '[entrypoint] WARNING: sshd failed; see %s\n' "$LOGS/sshd.log"
 announce() {
     printf '\n============================================================\n'
     printf '  REMOTE-SHELL DAEMON %s\n' "$1"
@@ -217,4 +243,5 @@ RUN chmod +x /usr/local/bin/opd-run /usr/local/bin/opd-status
 
 # Was: ENTRYPOINT ["python", "/app/train.py"]. train.py still runs — just from inside a relay shell,
 # e.g.:  python /app/train.py --backend prime_rl --prime_algorithm opd ...
+EXPOSE 22
 ENTRYPOINT ["/app/entrypoint.sh"]
