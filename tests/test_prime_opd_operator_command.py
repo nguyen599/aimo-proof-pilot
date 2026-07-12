@@ -84,4 +84,5 @@ def test_one_node_production_command_uses_requested_long_context_shape() -> None
     assert 'PRIME_GROUP_SIZE:-8' in text
     assert 'PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4' in text
     assert 'PRIME_PACKED_SEQUENCES_PER_STEP:-64' in text
+    assert 'PRIME_CHECKPOINT_INTERVAL:-100' in text
     assert 'WANDB_MODE=online' in text
