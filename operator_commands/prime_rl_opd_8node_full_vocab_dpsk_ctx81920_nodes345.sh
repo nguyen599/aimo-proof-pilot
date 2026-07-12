@@ -719,6 +719,7 @@ COMMON_ARGS=(
   --prime_proof_candidate_continue_count "${CANDIDATE_CONTINUE_COUNT}"
   --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}"
   --prime_eval_interval "${PRIME_OPD_EVAL_INTERVAL:-50}"
+  --prime_eval_skip_first_step "${PRIME_OPD_EVAL_SKIP_FIRST_STEP:-true}"
   --prime_eval_num_examples "${PRIME_OPD_EVAL_NUM_EXAMPLES:-8}"
   --prime_eval_group_size "${PRIME_OPD_EVAL_GROUP_SIZE:-1}"
   --prime_eval_max_completion_tokens "${EVAL_COMPLETION_TOKENS}"
