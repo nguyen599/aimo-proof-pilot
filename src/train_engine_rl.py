@@ -501,6 +501,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
                     "distill_mode": args.prime_opd_distill_mode,
                     "teacher_hidden_dtype": args.prime_opd_full_vocab_teacher_hidden_dtype,
                     "teacher_hidden_transport": args.prime_opd_full_vocab_hidden_transport,
+                    "teacher_hidden_codec": args.prime_opd_full_vocab_hidden_codec,
                 }
             )
             if args.prime_opd_full_vocab_hidden_transport == "filesystem":
@@ -1367,6 +1368,12 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         "--prime_opd_full_vocab_hidden_path",
         default=None,
         help="Absolute shared directory visible to teacher, orchestrator, packer, and trainer.",
+    )
+    parser.add_argument(
+        "--prime_opd_full_vocab_hidden_codec",
+        default="raw",
+        choices=("raw", "had_int6_blk32"),
+        help="Compact selected-row teacher hidden-state representation for filesystem full-vocab OPD.",
     )
     parser.add_argument("--prime_opd_full_vocab_token_chunk_size", type=int, default=64)
     parser.add_argument("--prime_opd_full_vocab_vocab_chunk_size", type=int, default=8192)

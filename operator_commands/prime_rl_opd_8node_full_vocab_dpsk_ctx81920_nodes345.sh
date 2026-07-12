@@ -281,6 +281,8 @@ HIDDEN_STATE_DIR="${PRIME_OPD_FULL_VOCAB_HIDDEN_PATH:-${RENDEZVOUS_DIR}/teacher_
 mkdir -p "${HIDDEN_STATE_DIR}"
 export PRIME_RL_HIDDEN_STATE_TTL_SECONDS="${PRIME_RL_HIDDEN_STATE_TTL_SECONDS:-21600}"
 export PRIME_RL_HIDDEN_STATE_SWEEP_INTERVAL_SECONDS="${PRIME_RL_HIDDEN_STATE_SWEEP_INTERVAL_SECONDS:-600}"
+export PRIME_RL_HIDDEN_STATE_MAX_PENDING_BYTES="${PRIME_RL_HIDDEN_STATE_MAX_PENDING_BYTES:-137438953472}"
+export PRIME_RL_HIDDEN_STATE_BUDGET_POLL_SECONDS="${PRIME_RL_HIDDEN_STATE_BUDGET_POLL_SECONDS:-2}"
 
 # Keep transient install/build/cache files in /tmp by default. The shared
 # cluster's /dev/shm is fast but can make Git checkouts fail with index.lock
@@ -685,6 +687,7 @@ COMMON_ARGS=(
   --prime_opd_distill_mode "${OPD_DISTILL_MODE}"
   --prime_opd_full_vocab_hidden_transport "${PRIME_OPD_FULL_VOCAB_HIDDEN_TRANSPORT:-filesystem}"
   --prime_opd_full_vocab_hidden_path "${HIDDEN_STATE_DIR}"
+  --prime_opd_full_vocab_hidden_codec "${PRIME_OPD_FULL_VOCAB_HIDDEN_CODEC:-had_int6_blk32}"
   --prime_opd_full_vocab_teacher_lm_head_path "${PRIME_OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH:-${TEACHER_MODEL_PATH}}"
   --prime_opd_full_vocab_teacher_lm_head_key "${PRIME_OPD_FULL_VOCAB_TEACHER_LM_HEAD_KEY:-head.weight}"
   --prime_opd_full_vocab_teacher_hidden_dtype "${PRIME_OPD_FULL_VOCAB_TEACHER_HIDDEN_DTYPE:-bfloat16}"

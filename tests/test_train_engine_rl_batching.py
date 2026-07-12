@@ -116,3 +116,20 @@ def test_fp32_inference_lm_heads_remain_explicitly_available() -> None:
 
     assert policy["inference"]["enable_fp32_lm_head"] is True
     assert teacher["inference"]["enable_fp32_lm_head"] is True
+
+
+def test_compact_full_vocab_hidden_codec_is_forwarded() -> None:
+    args = make_args(
+        "--prime_opd_distill_mode",
+        "full_vocab_hidden",
+        "--prime_opd_full_vocab_hidden_transport",
+        "filesystem",
+        "--prime_opd_full_vocab_hidden_path",
+        "/shared/hidden",
+        "--prime_opd_full_vocab_hidden_codec",
+        "had_int6_blk32",
+    )
+
+    config = build_prime_rl_config(args, Path("/tmp/output"))
+
+    assert config["orchestrator_algo"]["teacher_hidden_codec"] == "had_int6_blk32"
