@@ -188,7 +188,7 @@ fi
 # CUDA 12.x toolkit. NVIDIA's pip runtime can coexist with that toolkit, but
 # its library directory is not added to the dynamic loader path automatically.
 CUDA13_RUNTIME_DIR="${PRIME_CUDA13_RUNTIME_LIB_DIR:-}"
-if [[ -z "${CUDA13_RUNTIME_DIR}" ]]; then
+if [[ -z "${CUDA13_RUNTIME_DIR}" && "${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}" == "1" ]]; then
   CUDA13_RUNTIME_DIR="$(find /opt /root/.local -path '*/site-packages/nvidia/cu13/lib' -type d -print -quit 2>/dev/null || true)"
 fi
 if [[ -n "${CUDA13_RUNTIME_DIR}" ]]; then
@@ -233,7 +233,7 @@ export RUNTIME_DEPENDENCY_RETRY_MAX_SECONDS="${RUNTIME_DEPENDENCY_RETRY_MAX_SECO
 # The baked vLLM 0.24 image currently fails policy FP8 startup with an internal
 # CUTLASS W8A8 GEMM error for OLMo3Sink; the pinned wheel matches the last
 # successful policy node config/log.
-export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-1}"
+export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}"
 export PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION="${PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION:-0.23.1rc1.dev699+gf5a8d7337}"
 export PRIME_RL_RUNTIME_VLLM_WHEEL_URL="${PRIME_RL_RUNTIME_VLLM_WHEEL_URL:-https://wheels.vllm.ai/f5a8d73377d0f0a4e00cba172f9fbd0d50471b07/vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
