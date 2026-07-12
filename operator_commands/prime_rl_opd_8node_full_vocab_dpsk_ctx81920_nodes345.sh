@@ -184,6 +184,47 @@ if [[ -x /usr/local/cuda/bin/nvcc ]]; then
   export PATH="${CUDA_HOME}/bin:${PATH}"
 fi
 
+detect_trainer_attention_backend() {
+  local gpu_names="${PRIME_GPU_NAMES_OVERRIDE:-}"
+  local compute_caps="${PRIME_GPU_COMPUTE_CAPS_OVERRIDE:-}"
+  local requested="${PRIME_TRAINER_ATTN:-}"
+
+  if [[ -z "${gpu_names}" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+    gpu_names="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true)"
+  fi
+  if [[ -z "${compute_caps}" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+    compute_caps="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null || true)"
+  fi
+
+  # OLMo3 mixes full and sliding attention. Magi FA4 has no sliding-window
+  # interface, while FA3 is Hopper-only, so Blackwell must use the FA2 sink
+  # backend even when a stale environment requests FA3/FA4 explicitly.
+  if grep -Eiq '(^|[^[:alnum:]])(GB)?B(200|300)([^[:alnum:]]|$)|Blackwell' <<< "${gpu_names}" \
+      || grep -Eq '^(10|11|12)\.' <<< "${compute_caps}"; then
+    printf '%s\n' "olmo3_sink_fa2"
+    return
+  fi
+
+  if [[ -n "${requested}" ]]; then
+    printf '%s\n' "${requested}"
+    return
+  fi
+
+  # Use FA3 only when all visible devices report Hopper's SM90 capability.
+  # Mixed/unknown fleets take the portable FA2 path.
+  if [[ -n "${compute_caps}" ]] \
+      && ! grep -Evq '^[[:space:]]*9\.[0-9]+[[:space:]]*$' <<< "${compute_caps}"; then
+    printf '%s\n' "olmo3_sink_fa3"
+    return
+  fi
+
+  printf '%s\n' "olmo3_sink_fa2"
+}
+
+TRAINER_ATTN="$(detect_trainer_attention_backend)"
+GPU_NAMES_ONE_LINE="$(tr '\n' ';' <<< "${PRIME_GPU_NAMES_OVERRIDE:-$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true)}" | sed 's/;*$//')"
+echo "[prime-opd] trainer attention backend=${TRAINER_ATTN} gpu_names=${GPU_NAMES_ONE_LINE:-unavailable}"
+
 # The pinned vLLM wheel is built against CUDA 13 while some raw hosts expose a
 # CUDA 12.x toolkit. NVIDIA's pip runtime can coexist with that toolkit, but
 # its library directory is not added to the dynamic loader path automatically.
@@ -737,7 +778,7 @@ COMMON_ARGS=(
   --prime_max_off_policy_steps "${MAX_OFF_POLICY}"
   --prime_gpus_per_node 8
   --prime_trainer_model_impl custom
-  --prime_trainer_attn "${PRIME_TRAINER_ATTN:-olmo3_sink_fa2}"
+  --prime_trainer_attn "${TRAINER_ATTN}"
   --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-1}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
