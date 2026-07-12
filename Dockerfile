@@ -141,7 +141,8 @@ else:
 PY
 
 # Generic Docker GPU providers expose container port 22 but do not inject an SSH daemon into
-# arbitrary images. Keep SSH key-only and let the provider mount /root/.ssh/authorized_keys.
+# arbitrary images. Keep SSH key-only; the runtime entrypoint accepts provider key environment
+# variables and falls back to the repository's docker_authorized_keys key.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openssh-server && \
     mkdir -p /run/sshd /root/.ssh && \
@@ -155,7 +156,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --chmod=600 docker_authorized_keys /root/.ssh/authorized_keys
+COPY --chmod=755 docker_ssh_entrypoint.sh /usr/local/bin/aimo-proof-pilot-entrypoint.sh
 RUN ssh-keygen -A && sshd -t
 
 EXPOSE 22
-CMD ["/usr/sbin/sshd", "-D", "-e"]
+ENTRYPOINT ["/usr/local/bin/aimo-proof-pilot-entrypoint.sh"]
