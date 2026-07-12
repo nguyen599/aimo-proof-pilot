@@ -117,9 +117,16 @@ bash "${SCRIPT_DIR}/install_training_deps.sh"
 # Noninteractive SSH commands do not source /etc/profile.d on all Prime images.
 # Expose only the training entry points through /usr/local/bin; Ubuntu services
 # that use /usr/bin/python3 explicitly continue to use the system interpreter.
+for python_name in python python3 python3.12; do
+    rm -f "/usr/local/bin/${python_name}"
+    printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        "exec \"${VENV_DIR}/bin/python\" \"\$@\"" \
+        >"/usr/local/bin/${python_name}"
+    chmod 0755 "/usr/local/bin/${python_name}"
+done
 for command_name in \
-    python python3 python3.12 pip pip3 pip3.12 \
-    torchrun vllm hf wandb accelerate deepspeed ray; do
+    pip pip3 pip3.12 torchrun vllm hf wandb accelerate deepspeed ray; do
     if [ -x "${VENV_DIR}/bin/${command_name}" ]; then
         ln -sfn "${VENV_DIR}/bin/${command_name}" "/usr/local/bin/${command_name}"
     fi
