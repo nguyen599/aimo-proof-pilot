@@ -26,6 +26,11 @@ export PRIME_OPD_OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${RUN_ROOT}/output}"
 export PRIME_OPD_LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${RUN_ROOT}/logs}"
 export PRIME_OPD_CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${RUN_ROOT}/checkpoints}"
 
+# The raw Prime node is CUDA 12.8 and already carries a compatible vLLM 0.24
+# build. The main cluster command otherwise pins a CUDA 13 development wheel.
+export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}"
+export PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION="${PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION:-0.24.0}"
+
 # One-node allocation: policy GPUs 0-1, trainer GPUs 2-3, teacher GPUs 6-7.
 export PRIME_TRAIN_GPUS="${PRIME_TRAIN_GPUS:-2}"
 export PRIME_VLLM_TP="${PRIME_VLLM_TP:-1}"
