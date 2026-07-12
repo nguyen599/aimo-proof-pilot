@@ -1017,6 +1017,9 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "records": {},
             "selected": None,
             "ranks": {},
+            "selector_records": {},
+            "selector_candidates": None,
+            "selector_leader": None,
         }
         self._candidate_gate_groups[group_id] = group
         prepared_inputs: list[Any] = []
@@ -1266,6 +1269,125 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             wait_for_selection=False,
         )
 
+    def _finalize_group_selector_locked(self, group: dict[str, Any]) -> None:
+        if group.get("selector_candidates") is not None:
+            return
+
+        ranked: list[dict[str, Any]] = []
+        for record in group.get("selector_records", {}).values():
+            valid_rounds = [
+                dict(payload)
+                for payload in record.get("rounds", [])
+                if str(payload.get("proof") or "").strip()
+                and float(payload.get("format_score", 0.0) or 0.0) > 0.0
+            ]
+            if not valid_rounds:
+                continue
+            best_payload = max(
+                valid_rounds,
+                key=lambda payload: (
+                    self._selector_score(payload),
+                    float(payload.get("format_score", 0.0) or 0.0),
+                    float(payload.get("verifier_meta_reward", 0.0) or 0.0),
+                    int(payload.get("round_index", 0)),
+                ),
+            )
+            ranked.append(
+                {
+                    "source_candidate_index": int(record["candidate_index"]),
+                    "source_candidate_rank": int(record.get("candidate_rank", 0)),
+                    "round_index": int(best_payload.get("round_index", 0)),
+                    "preselection_score": self._selector_score(best_payload),
+                    "format_score": clamp01(float(best_payload.get("format_score", 0.0) or 0.0)),
+                    "verifier_meta_reward": clamp01(
+                        float(best_payload.get("verifier_meta_reward", 0.0) or 0.0)
+                    ),
+                    "proof": str(best_payload.get("proof") or "").strip(),
+                    "_payload": best_payload,
+                }
+            )
+
+        ranked.sort(
+            key=lambda candidate: (
+                float(candidate["preselection_score"]),
+                float(candidate["format_score"]),
+                float(candidate["verifier_meta_reward"]),
+                -int(candidate["source_candidate_rank"]),
+                -int(candidate["source_candidate_index"]),
+            ),
+            reverse=True,
+        )
+        candidates = ranked[: self.selector_top_k]
+        for candidate_id, candidate in enumerate(candidates, start=1):
+            candidate["candidate_id"] = candidate_id
+
+        selected = set(group.get("selected") or set())
+        group["selector_candidates"] = candidates
+        group["selector_leader"] = (
+            int(candidates[0]["source_candidate_index"])
+            if candidates
+            else (min(selected) if selected else None)
+        )
+
+    async def _submit_group_selector_record(
+        self,
+        state: vf.State,
+        *,
+        failed: bool = False,
+        wait_for_group: bool = True,
+    ) -> tuple[bool, list[dict[str, Any]]] | None:
+        info = self._input_info(state)
+        group_id = str(info.get("candidate_group_id") or "")
+        if not self.candidate_gate_enabled or not group_id or not info.get("candidate_selected"):
+            return None
+        group = self._candidate_gate_groups.get(group_id)
+        if group is None:
+            LOGGER.warning("Proof-OPD selector group missing: group=%s", group_id)
+            return None
+
+        candidate_index = int(info.get("candidate_index", -1))
+        condition: asyncio.Condition = group["condition"]
+        async with condition:
+            selector_records = group.setdefault("selector_records", {})
+            selector_records.setdefault(
+                candidate_index,
+                {
+                    "candidate_index": candidate_index,
+                    "candidate_rank": int(info.get("candidate_rank") or 0),
+                    "rounds": [] if failed else [dict(payload) for payload in state.get("proof_opd_rounds") or []],
+                    "failed": bool(failed),
+                },
+            )
+            state["proof_opd_group_selector_submitted"] = True
+            expected = len(group.get("selected") or set())
+            if len(selector_records) >= expected:
+                self._finalize_group_selector_locked(group)
+                condition.notify_all()
+            while wait_for_group and group.get("selector_candidates") is None:
+                await condition.wait()
+
+            if group.get("selector_candidates") is None:
+                return None
+            candidates = list(group["selector_candidates"])
+            is_leader = candidate_index == group.get("selector_leader")
+            LOGGER.info(
+                "Proof-OPD group selector ready: group=%s candidate=%d leader=%s pool=%d",
+                group_id,
+                candidate_index,
+                is_leader,
+                len(candidates),
+            )
+            return is_leader, candidates
+
+    @vf.cleanup(priority=40)
+    async def release_group_selector_on_failed_rollout(self, state: vf.State) -> None:
+        if state.get("proof_opd_group_selector_submitted"):
+            return
+        info = self._input_info(state)
+        if not info.get("candidate_group_id") or not info.get("candidate_selected"):
+            return
+        await self._submit_group_selector_record(state, failed=True, wait_for_group=False)
+
     def _effective_meta_score(self, result: dict[str, Any]) -> float:
         if not self.enable_meta_verification:
             return 1.0
@@ -1356,6 +1478,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                     "verifier_meta_reward": clamp01(
                         float(payload.get("verifier_meta_reward", 0.0) or 0.0)
                     ),
+                    "proof": proof,
+                    "_payload": dict(payload),
                 }
             )
         ranked.sort(
@@ -1635,8 +1759,18 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         LOGGER.debug("Proof-OPD round scored: %s", json.dumps(selected, ensure_ascii=False)[:4000])
         return selected
 
-    def _next_selector_prompt(self, state: vf.State) -> vf.Messages:
-        candidates = self._rank_selector_candidates(state)
+    def _public_selector_candidates(self, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {key: value for key, value in candidate.items() if key not in {"_payload", "proof"}}
+            for candidate in candidates
+        ]
+
+    def _next_selector_prompt(
+        self,
+        state: vf.State,
+        candidates: list[dict[str, Any]] | None = None,
+    ) -> vf.Messages:
+        candidates = list(candidates) if candidates is not None else self._rank_selector_candidates(state)
         state["proof_opd_selector_candidates"] = candidates
         if not candidates:
             payload = dict(state.get("proof_opd_reward_payload") or {})
@@ -1653,10 +1787,12 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             return self._stop(state)
 
         rounds = state.get("proof_opd_rounds") or []
-        selection_bundle = [
-            str(rounds[int(candidate["round_list_index"])].get("proof") or "").strip()
-            for candidate in candidates
-        ]
+        selection_bundle = []
+        for candidate in candidates:
+            proof = str(candidate.get("proof") or "").strip()
+            if not proof and "round_list_index" in candidate:
+                proof = str(rounds[int(candidate["round_list_index"])].get("proof") or "").strip()
+            selection_bundle.append(proof)
         prompt = build_deepseek_selector_prompt(self._problem(state), selection_bundle)
         log_llm_input("selector", prompt, state=state)
         state["proof_opd_stage"] = "selector"
@@ -1681,14 +1817,29 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             candidate for candidate in candidates if int(candidate["candidate_id"]) == selected_id
         )
         rounds = state.get("proof_opd_rounds") or []
-        selected = dict(rounds[int(selected_candidate["round_list_index"])])
+        selected_payload = selected_candidate.get("_payload")
+        if isinstance(selected_payload, dict):
+            selected = dict(selected_payload)
+        else:
+            selected = dict(rounds[int(selected_candidate["round_list_index"])])
         selected["reward"] = self._selector_score(selected)
         selected["selected_round_index"] = int(selected_candidate["round_index"])
-        selected["final_round_reward"] = self._selector_score(rounds[-1])
-        selected["best_round_reward"] = max(self._selector_score(payload) for payload in rounds)
-        selected["refine_rounds_used"] = max(0, len(rounds) - 1)
+        if "source_candidate_index" in selected_candidate:
+            selected["selector_source_candidate_index"] = int(selected_candidate["source_candidate_index"])
+            selected["selector_source_candidate_rank"] = int(selected_candidate.get("source_candidate_rank", 0))
+            selected["final_round_reward"] = float(
+                selected.get("final_round_reward", self._selector_score(selected)) or 0.0
+            )
+            selected["best_round_reward"] = max(
+                float(candidate.get("preselection_score", 0.0) or 0.0) for candidate in candidates
+            )
+            selected.setdefault("refine_rounds_used", int(selected_candidate.get("round_index", 0)))
+        else:
+            selected["final_round_reward"] = self._selector_score(rounds[-1])
+            selected["best_round_reward"] = max(self._selector_score(payload) for payload in rounds)
+            selected["refine_rounds_used"] = max(0, len(rounds) - 1)
         selected["selector_top_k"] = self.selector_top_k
-        selected["selector_candidates"] = candidates
+        selected["selector_candidates"] = self._public_selector_candidates(candidates)
         selected["selector_valid"] = not bool(invalid_reason)
         selected["selector_fallback_used"] = bool(invalid_reason)
         selected["selector_invalid_reason"] = invalid_reason
@@ -1769,13 +1920,24 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         state["proof_opd_meta"] = result.get("meta")
         state["proof_opd_pending_verifier_result"] = None
 
-    def _after_verifier_result(self, state: vf.State) -> vf.Messages:
-        state["proof_opd_verify_index"] = int(state.get("proof_opd_verify_index", 0)) + 1
-        if int(state["proof_opd_verify_index"]) < self.num_verifiers:
-            return self._next_verifier_prompt(state)
-        payload = self._finalize_round(state)
-        if self._should_refine(state, payload):
-            return self._next_refinement_prompt(state, payload)
+    async def _finish_candidate(self, state: vf.State, payload: dict[str, Any]) -> vf.Messages:
+        group_result = await self._submit_group_selector_record(state)
+        if group_result is not None:
+            is_leader, candidates = group_result
+            if is_leader:
+                return self._next_selector_prompt(state, candidates)
+            payload.update(
+                {
+                    "selector_top_k": self.selector_top_k,
+                    "selector_candidates": self._public_selector_candidates(candidates),
+                    "selector_valid": False,
+                    "selector_fallback_used": False,
+                    "selector_invalid_reason": "group_selector_delegated",
+                }
+            )
+            state["proof_opd_reward_payload"] = payload
+            return self._stop(state)
+
         if float(payload.get("reward", 0.0) or 0.0) >= self.refine_early_stop_reward:
             payload.update(
                 {
@@ -1787,6 +1949,15 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             state["proof_opd_reward_payload"] = payload
             return self._stop(state)
         return self._next_selector_prompt(state)
+
+    async def _after_verifier_result(self, state: vf.State) -> vf.Messages:
+        state["proof_opd_verify_index"] = int(state.get("proof_opd_verify_index", 0)) + 1
+        if int(state["proof_opd_verify_index"]) < self.num_verifiers:
+            return self._next_verifier_prompt(state)
+        payload = self._finalize_round(state)
+        if self._should_refine(state, payload):
+            return self._next_refinement_prompt(state, payload)
+        return await self._finish_candidate(state, payload)
 
     async def env_response(self, messages: vf.Messages, state: vf.State, **_: Any) -> vf.Messages:
         return []
@@ -1830,7 +2001,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 state["proof_opd_reward_payload"] = payload
                 LOGGER.info("Proof-OPD invalid generation: %s", json.dumps(payload, ensure_ascii=False))
                 if self._rank_selector_candidates(state):
-                    return self._next_selector_prompt(state)
+                    return await self._finish_candidate(state, payload)
                 return self._stop(state)
             if stage == "proof" and not candidate_selected:
                 payload = self._proof_only_candidate_payload(
@@ -1927,7 +2098,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             result["meta_analysis"] = ""
             result["meta_raw_output"] = ""
             self._append_verifier_result(state, result)
-            return self._after_verifier_result(state)
+            return await self._after_verifier_result(state)
 
         if stage == "meta":
             meta = parse_meta_verifier_response(text)
@@ -1968,7 +2139,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 }
             )
             self._append_verifier_result(state, result)
-            return self._after_verifier_result(state)
+            return await self._after_verifier_result(state)
 
         if stage == "selector":
             selector = parse_selector_response(text)

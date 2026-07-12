@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from datasets import Dataset
 from prime_rl.orchestrator.algo.routing import stamp_loss_routing
@@ -181,6 +182,9 @@ def install_group(env: ProofOPDEnv, group_id: str, expected: int, continue_count
         "records": {},
         "selected": None,
         "ranks": {},
+        "selector_records": {},
+        "selector_candidates": None,
+        "selector_leader": None,
     }
 
 
@@ -268,7 +272,7 @@ def test_perfect_round_stops_without_refinement_or_selector() -> None:
         "proof_opd_selector_candidates": [],
     }
 
-    messages = env._after_verifier_result(state)
+    messages = asyncio.run(env._after_verifier_result(state))
 
     assert messages == []
     assert state["final_env_response"] == []
@@ -294,9 +298,9 @@ def test_run_group_generates_eight_proofs_but_only_four_verifier_calls() -> None
 
     trajectory_lengths = sorted(len(output["trajectory"]) for output in outputs)
     selected = [bool(output["info"].get("candidate_selected")) for output in outputs]
-    assert trajectory_lengths == [1, 1, 1, 1, 2, 2, 2, 2]
+    assert trajectory_lengths == [1, 1, 1, 1, 2, 2, 2, 3]
     assert sum(selected) == 4
-    assert client.call_count == 12
+    assert client.call_count == 13
 
 
 def test_selected_candidate_trains_every_stage_including_selector() -> None:
@@ -319,11 +323,18 @@ def test_selected_candidate_trains_every_stage_including_selector() -> None:
     proof_only_outputs = [output for output in outputs if not output["info"].get("candidate_selected")]
     assert len(selected_outputs) == 4
     assert len(proof_only_outputs) == 4
-    assert all(len(output["trajectory"]) == 4 for output in selected_outputs)
+    assert sorted(len(output["trajectory"]) for output in selected_outputs) == [3, 3, 3, 4]
     assert all(len(output["trajectory"]) == 1 for output in proof_only_outputs)
-    assert client.call_count == 20
+    assert client.call_count == 17
 
-    selected = selected_outputs[0]
+    selected = next(output for output in selected_outputs if len(output["trajectory"]) == 4)
+    selector_prompt = "\n".join(
+        str(getattr(message, "content", "")) for message in selected["trajectory"][-1]["prompt"]
+    )
+    assert selector_prompt.count("### Candidate ") == 3
+    selector_proofs = re.findall(r"### Candidate \d+\nProof candidate ([^.\n]+)", selector_prompt)
+    assert len(selector_proofs) == 3
+    assert len(set(selector_proofs)) == 3
     for step_index, step in enumerate(selected["trajectory"]):
         step["tokens"] = {
             "prompt_ids": [1000 + step_index],

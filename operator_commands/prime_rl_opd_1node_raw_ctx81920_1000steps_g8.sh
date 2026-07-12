@@ -19,7 +19,10 @@ export PRIME_TRAIN_ENTRYPOINT="${PRIME_TRAIN_ENTRYPOINT:-/opt/aimo-proof-pilot/s
 
 export PRIME_OPD_MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/alloc/models/opd-32b-deploy/opd-32b-deploy}"
 export PRIME_OPD_TEACHER_MODEL_PATH="${PRIME_OPD_TEACHER_MODEL_PATH:-/alloc/models/dpsk-v4-flash}"
-export PRIME_3NODE_TMP_ROOT="${PRIME_3NODE_TMP_ROOT:-${RUN_ROOT}}"
+# vLLM creates Unix-domain sockets below VLLM_RPC_BASE_PATH. Keep this path
+# short enough for Linux sockaddr_un (107 bytes), independent of the verbose
+# run name used for durable logs and checkpoints.
+export PRIME_3NODE_TMP_ROOT="${PRIME_3NODE_TMP_ROOT:-/alloc/pp/${RUN_STAMP}}"
 export PRIME_3NODE_RENDEZVOUS_DIR="${PRIME_3NODE_RENDEZVOUS_DIR:-${RUN_ROOT}/rdzv}"
 export PRIME_3NODE_RUNTIME_BASE="${PRIME_3NODE_RUNTIME_BASE:-${RUN_ROOT}/runtime}"
 export PRIME_OPD_OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${RUN_ROOT}/output}"
