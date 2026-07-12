@@ -4,9 +4,12 @@ import asyncio
 import logging
 
 from datasets import Dataset
+from prime_rl.orchestrator.algo.routing import stamp_loss_routing
+from prime_rl.orchestrator.trajectories import trace_to_samples
 from verifiers.clients.client import Client
 from verifiers.types import Response
 from verifiers.types import ResponseMessage
+from verifiers.v1.legacy import rollout_output_to_trace
 
 from proof_opd_env import ProofOPDEnv
 from proof_opd_env import ProofOPDRubric
@@ -50,6 +53,42 @@ class StageClient(Client):
                 "<think>verify</think>\n"
                 "Here is my evaluation of the solution:\nThe proof is correct.\n"
                 "Based on my evaluation, the final overall score should be:\n\\boxed{1}"
+            )
+        else:
+            content = generation_output(1.0, f"call-{self.call_count}")
+        return Response(
+            id=f"response-{self.call_count}",
+            created=0,
+            model=model,
+            usage=None,
+            message=ResponseMessage(
+                content=content,
+                reasoning_content=None,
+                finish_reason="stop",
+                is_truncated=False,
+                tokens=None,
+                tool_calls=None,
+            ),
+        )
+
+
+class SelectorStageClient(StageClient):
+    async def get_response(self, prompt, model, sampling_args, tools=None, **kwargs) -> Response:
+        self.call_count += 1
+        prompt_text = "\n".join(str(getattr(message, "content", "")) for message in prompt)
+        if "<selected_id>ID</selected_id>" in prompt_text:
+            content = "<think>select the strongest candidate</think><selected_id>1</selected_id>"
+        elif 'assess whether this "solution evaluation" is reasonable' in prompt_text:
+            content = (
+                '<think>check the evaluation</think>\nHere is my analysis of the "solution evaluation":\n'
+                "The evaluation is reasonable.\n"
+                'Based on my analysis, I rate the "solution evaluation" as:\n\\boxed{1}'
+            )
+        elif "## Instruction" in prompt_text:
+            content = (
+                "<think>verify</think>\n"
+                "Here is my evaluation of the solution:\nThe proof has a minor gap.\n"
+                "Based on my evaluation, the final overall score should be:\n\\boxed{0.5}"
             )
         else:
             content = generation_output(1.0, f"call-{self.call_count}")
@@ -258,3 +297,52 @@ def test_run_group_generates_eight_proofs_but_only_four_verifier_calls() -> None
     assert trajectory_lengths == [1, 1, 1, 1, 2, 2, 2, 2]
     assert sum(selected) == 4
     assert client.call_count == 12
+
+
+def test_selected_candidate_trains_every_stage_including_selector() -> None:
+    env = make_env(continue_count=4, num_verifiers=1)
+    env.refine_rounds = 0
+    client = SelectorStageClient()
+    row = dict(env.get_dataset()[0])
+
+    outputs = asyncio.run(
+        env.run_group(
+            group_inputs=[dict(row) for _ in range(8)],
+            client=client,
+            model="test-model",
+            sampling_args={},
+            state_columns=["trajectory"],
+        )
+    )
+
+    selected_outputs = [output for output in outputs if output["info"].get("candidate_selected")]
+    proof_only_outputs = [output for output in outputs if not output["info"].get("candidate_selected")]
+    assert len(selected_outputs) == 4
+    assert len(proof_only_outputs) == 4
+    assert all(len(output["trajectory"]) == 4 for output in selected_outputs)
+    assert all(len(output["trajectory"]) == 1 for output in proof_only_outputs)
+    assert client.call_count == 20
+
+    selected = selected_outputs[0]
+    for step_index, step in enumerate(selected["trajectory"]):
+        step["tokens"] = {
+            "prompt_ids": [1000 + step_index],
+            "completion_ids": [2000 + step_index, 3000 + step_index],
+            "completion_logprobs": [-0.1, -0.2],
+        }
+    trace = rollout_output_to_trace(selected, task_idx=0)
+    samples = trace_to_samples(trace, env_name="proof_math")
+
+    assert trace.num_branches == 4
+    assert len(samples) == 4
+    assert all(sum(sample.mask) == 2 for sample in samples)
+    assert [sample.token_ids[-2:] for sample in samples] == [
+        [2000, 3000],
+        [2001, 3001],
+        [2002, 3002],
+        [2003, 3003],
+    ]
+    for sample in samples:
+        stamp_loss_routing(sample, "ref_kl")
+        assert sample.ref_kl_weights == [float(value) for value in sample.mask]
+        assert sample.rl_weights == [0.0] * len(sample.token_ids)

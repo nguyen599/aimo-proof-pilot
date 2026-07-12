@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+COMMAND = REPO_ROOT / "operator_commands" / "prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh"
+
+
+def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    for name in ("NODE_RANK", "SLURM_NODEID", "RANK", "LOCAL_RANK", "WORLD_SIZE"):
+        env.pop(name, None)
+    env.update(
+        {
+            "GLOBAL_RANK": "0",
+            "PRIME_NODE_LAYOUT": "1node",
+            "PRIME_COMMAND_PREVIEW": "1",
+            "PRIME_3NODE_CLEAN_ROLE_PROCS": "0",
+            "PRIME_3NODE_ROLE_LOCK": str(tmp_path / "role.lock"),
+            "PRIME_3NODE_TMP_ROOT": str(tmp_path / "runtime"),
+            "PRIME_3NODE_RENDEZVOUS_DIR": str(tmp_path / "rendezvous"),
+            "OLMO_RUN_DIR_NAME": "one_node_layout_test",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(COMMAND)],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout
+
+    assert "node=0 role=full" in output
+    assert "policy_topology tp=1 dp=4" in output
+    assert "trainer_gpus=2 teacher_topology tp=2 dp=1 gpu_ids=6,7" in output
+    assert "policy GPUs 0-3, trainer GPUs 4-5, teacher GPUs 6,7" in output
+    assert "--prime_component full" in output
+    assert "--prime_train_gpus 2" in output
+    assert "--prime_infer_gpus 4" in output
+    assert "--prime_vllm_data_parallel_size 4" in output
+    assert "--prime_opd_teacher_vllm_tensor_parallel_size 2" in output
+    assert "disable_custom_all_reduce" not in output
