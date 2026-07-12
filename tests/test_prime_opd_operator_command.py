@@ -78,7 +78,10 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
 def test_one_node_production_command_uses_requested_long_context_shape() -> None:
     text = PRODUCTION_COMMAND.read_text()
 
-    assert 'PRIME_TRAIN_GPUS:-4' in text
+    assert 'PRIME_TRAIN_GPUS:-2' in text
+    assert 'PRIME_VLLM_DP:-4' in text
+    assert 'PRIME_OPD_POLICY_MAX_NUM_SEQS:-6' in text
+    assert 'PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-24' in text
     assert 'MAX_TRAIN_STEPS:-1000' in text
     assert 'PRIME_OPD_CTX_LEN:-81920' in text
     assert 'PRIME_OPD_VLLM_MAX_MODEL_LEN:-90112' in text
