@@ -469,16 +469,19 @@ CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME
 CTX_LEN="${PRIME_OPD_CTX_LEN:-8192}"
 VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-16384}"
 TEACHER_VLLM_CTX_LEN="${PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN:-${VLLM_CTX_LEN}}"
+OPD_DISTILL_MODE="${PRIME_OPD_DISTILL_MODE:-token_logprobs}"
 COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-8192}"
 EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-8192}"
 BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 # DeepSeek-V4-Flash is close to the H200 memory limit even in FP8/MXFP4.
 # The teacher endpoint is used for serialized hidden-state scoring, so keep its
 # startup profiling shape much smaller than the policy rollout endpoint.
-TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-32768}"
-if (( TEACHER_BATCHED_TOKENS < TEACHER_VLLM_CTX_LEN )); then
-  echo "[prime-opd-3node] raising teacher max_num_batched_tokens from ${TEACHER_BATCHED_TOKENS} to ${TEACHER_VLLM_CTX_LEN} to satisfy vLLM max_model_len validation"
-  TEACHER_BATCHED_TOKENS="${TEACHER_VLLM_CTX_LEN}"
+if [[ "${OPD_DISTILL_MODE}" == "token_logprobs" ]]; then
+  # Prompt-logprob scoring otherwise materializes [context, vocab] FP32
+  # log-softmax tensors. Keep prefill chunked independently of max_model_len.
+  TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-4096}"
+else
+  TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-32768}"
 fi
 MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
@@ -679,7 +682,7 @@ COMMON_ARGS=(
   --weight_decay "${PRIME_WEIGHT_DECAY:-0.0}"
   --max_grad_norm "${PRIME_MAX_GRAD_NORM:-1.0}"
   --prime_algorithm opd
-  --prime_opd_distill_mode "${PRIME_OPD_DISTILL_MODE:-token_logprobs}"
+  --prime_opd_distill_mode "${OPD_DISTILL_MODE}"
   --prime_opd_full_vocab_hidden_transport "${PRIME_OPD_FULL_VOCAB_HIDDEN_TRANSPORT:-filesystem}"
   --prime_opd_full_vocab_hidden_path "${HIDDEN_STATE_DIR}"
   --prime_opd_full_vocab_teacher_lm_head_path "${PRIME_OPD_FULL_VOCAB_TEACHER_LM_HEAD_PATH:-${TEACHER_MODEL_PATH}}"
