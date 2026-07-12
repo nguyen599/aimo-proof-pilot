@@ -271,6 +271,7 @@ DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
     "pybase64>=1.4.2",
     "pandas>=2.0",
     "msgspec>=0.18",
+    "tomli-w>=1.2.0",
     "weave",
 )
 PROTECTED_RUNTIME_OVERLAY_PACKAGES = (

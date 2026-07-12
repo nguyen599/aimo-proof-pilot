@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${VENV_DIR:-/opt/aimo-proof-pilot-venv}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 TORCH_VERSION="${TORCH_VERSION:-2.11.0}"
+TORCHAUDIO_VERSION="${TORCHAUDIO_VERSION:-2.11.0}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.26.0}"
 CUDA_VERSION="${CUDA_VERSION:-12.8.1}"
 CACHE_ROOT="${CACHE_ROOT:-/alloc/aimo-proof-pilot-cache}"
 
@@ -114,6 +116,16 @@ MODAL_EXTRAS_CACHE="${CACHE_ROOT}/wheels" \
 VLLM_BUILD_FROM_SOURCE=0 \
 bash "${SCRIPT_DIR}/install_training_deps.sh"
 
+# vLLM and media dependencies may resolve CUDA 12.9 companion wheels from
+# their own indexes. Re-pin the complete PyTorch family to the node's CUDA 12.8
+# index so transformers' optional media imports cannot break model bootstrap.
+uv pip install \
+    --index-strategy unsafe-best-match \
+    --index-url "${PYTORCH_INDEX_URL}" \
+    "torch==${TORCH_VERSION}" \
+    "torchaudio==${TORCHAUDIO_VERSION}" \
+    "torchvision==${TORCHVISION_VERSION}"
+
 # Noninteractive SSH commands do not source /etc/profile.d on all Prime images.
 # Expose only the training entry points through /usr/local/bin; Ubuntu services
 # that use /usr/bin/python3 explicitly continue to use the system interpreter.
@@ -142,12 +154,16 @@ ldconfig
 
 python - <<'PY'
 import torch
+import torchaudio
+import torchvision
 import vllm
 from apex.optimizers import FusedAdam
 from transformer_engine.pytorch.optimizers import FusedAdam as TEFusedAdam
 
 print("Prime node environment ready")
 print("torch", torch.__version__, "cuda", torch.version.cuda)
+print("torchaudio", torchaudio.__version__)
+print("torchvision", torchvision.__version__)
 print("vllm", vllm.__version__)
 print("apex.FusedAdam", FusedAdam)
 print("transformer_engine.FusedAdam", TEFusedAdam)
