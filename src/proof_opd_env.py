@@ -573,6 +573,69 @@ def trajectory_step_is_truncated(step: Any) -> bool:
     return finish_reason in {"length", "max_tokens", "token_limit"}
 
 
+def trajectory_step_token_counts(step: Any) -> dict[str, int]:
+    counts = {
+        "prompt_tokens": 0,
+        "generated_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+    }
+    if not isinstance(step, dict):
+        return counts
+
+    response = step.get("response")
+    response_message = getattr(response, "message", None)
+    if response_message is None and isinstance(response, dict):
+        response_message = response.get("message")
+    response_tokens = (
+        response_message.get("tokens")
+        if isinstance(response_message, dict)
+        else getattr(response_message, "tokens", None)
+    )
+
+    def token_ids(value: Any, key: str) -> Any:
+        return value.get(key) if isinstance(value, dict) else getattr(value, key, None)
+
+    raw_prompt_ids = token_ids(response_tokens, "prompt_ids")
+    raw_completion_ids = token_ids(response_tokens, "completion_ids")
+    if isinstance(raw_prompt_ids, list):
+        counts["prompt_tokens"] = len(raw_prompt_ids)
+    if isinstance(raw_completion_ids, list):
+        counts["generated_tokens"] = len(raw_completion_ids)
+
+    # Parsed trajectory IDs are bounded by max_seq_len, so use them only when
+    # the provider did not retain the original response token arrays.
+    tokens = step.get("tokens")
+    if isinstance(tokens, dict):
+        prompt_ids = tokens.get("prompt_ids")
+        completion_ids = tokens.get("completion_ids")
+        if counts["prompt_tokens"] == 0 and isinstance(prompt_ids, list):
+            counts["prompt_tokens"] = len(prompt_ids)
+        if counts["generated_tokens"] == 0 and isinstance(completion_ids, list):
+            counts["generated_tokens"] = len(completion_ids)
+
+    usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
+
+    def usage_value(key: str) -> int:
+        value = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, 0)
+        try:
+            return max(0, int(value or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    if counts["prompt_tokens"] == 0:
+        counts["prompt_tokens"] = usage_value("prompt_tokens")
+    if counts["generated_tokens"] == 0:
+        counts["generated_tokens"] = usage_value("completion_tokens")
+    counts["reasoning_tokens"] = usage_value("reasoning_tokens")
+    counts["total_tokens"] = counts["prompt_tokens"] + counts["generated_tokens"]
+    if counts["total_tokens"] == 0:
+        counts["total_tokens"] = usage_value("total_tokens")
+    return counts
+
+
 def json_loads_maybe(value: Any) -> Any:
     if not isinstance(value, str):
         return value
@@ -1069,6 +1132,22 @@ class ProofOPDRubric(vf.Rubric):
             return default
 
 
+class ProofOPDSingleTurnRubric(ProofOPDRubric):
+    async def score_rollout(self, state: vf.State) -> None:
+        await super().score_rollout(state)
+        info = dict(state.get("info") or {})
+        stage = str(info.get("stage") or state.get("proof_opd_stage") or "single").lower()
+        if stage not in SINGLE_TURN_STAGES:
+            stage = "single"
+        trajectory = state.get("trajectory") or []
+        counts = trajectory_step_token_counts(trajectory[-1] if trajectory else None)
+        metrics = dict(state.get("metrics") or {})
+        for name, value in counts.items():
+            metrics[f"proof_opd_policy_{name}"] = float(value)
+            metrics[f"proof_opd_{stage}_policy_{name}"] = float(value)
+        state["metrics"] = metrics
+
+
 class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
     """Run one pre-rendered OPD stage prompt and terminate immediately."""
 
@@ -1087,11 +1166,13 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
         info = dict(state.get("info") or {})
         stage = str(state.get("proof_opd_stage") or info.get("stage") or "single")
         raw_output, is_truncated, finish_reason = "", False, ""
+        token_counts = trajectory_step_token_counts(None)
         trajectory = state.get("trajectory") or []
         if trajectory:
             raw_output = trajectory_step_text(trajectory[-1])
             is_truncated = trajectory_step_is_truncated(trajectory[-1])
             finish_reason = trajectory_step_finish_reason(trajectory[-1])
+            token_counts = trajectory_step_token_counts(trajectory[-1])
         info["proof_opd_trace"] = {
             "task_id": info.get("task_id") or state.get("task_id"),
             "source_index": info.get("source_index") or state.get("source_index"),
@@ -1101,6 +1182,7 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
             "reward": float(state.get("reward") or 0.0),
             "finish_reason": finish_reason,
             "is_truncated": is_truncated,
+            **token_counts,
             "stage_records": [
                 {
                     "stage": stage,
@@ -1111,6 +1193,7 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
                     "is_truncated": is_truncated,
                     "finish_reason": finish_reason,
                     "source": "single_turn_dataset",
+                    **token_counts,
                 }
             ],
             "raw_output_excerpt": clipped_trace_text(raw_output),
@@ -1888,6 +1971,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         is_truncated: bool = False,
         finish_reason: str = "",
     ) -> None:
+        trajectory = state.get("trajectory") or []
+        token_counts = trajectory_step_token_counts(trajectory[-1] if trajectory else None)
         state.setdefault("proof_opd_stage_records", []).append(
             {
                 "stage": stage,
@@ -1899,6 +1984,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 "is_truncated": bool(is_truncated),
                 "finish_reason": finish_reason,
                 "invalid_reason": invalid_reason,
+                **token_counts,
             }
         )
 
@@ -2600,7 +2686,7 @@ def load_environment(
         return ProofOPDSingleTurnEnv(
             dataset=dataset,
             eval_dataset=dataset,
-            rubric=ProofOPDRubric(),
+            rubric=ProofOPDSingleTurnRubric(),
             message_type="chat",
         )
     env_cls = ProofOPDVerifiableEvalEnv if use_verifiable_eval else ProofOPDEnv

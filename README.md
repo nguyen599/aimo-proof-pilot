@@ -173,6 +173,8 @@ bash operator_commands/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh
 
 The command derives `PRIME_GROUP_SIZE=1` and disables the candidate gate automatically when `PRIME_PROOF_DATASET_MODE` is `single`, `single_turn`, or `per_turn`. Explicit incompatible values fail during config generation instead of duplicating a pre-rendered row.
 
+Single-turn runs report policy token lengths through dynamic W&B metrics. For example, verifier rows produce `proof_opd_verify_policy_generated_tokens`, while the other stage names are `proof_opd_prove_policy_generated_tokens`, `proof_opd_select_policy_generated_tokens`, and `proof_opd_refine_policy_generated_tokens`. Prime-RL logs their mean/min/max/p10/p90 under the train environment's `metrics/` namespace and averages each key only over rows from that stage. Generic `proof_opd_policy_generated_tokens`, prompt-token, reasoning-token, and total-token metrics are also emitted. The same counts are stored in `proof_opd_trace` and its `stage_records` entry for sample-level debugging.
+
 Invalid-output behavior:
 
 - If proof generation reaches the token limit or omits a closed thinking block, verifier/meta stages are skipped.

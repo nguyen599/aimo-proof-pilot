@@ -7,6 +7,8 @@ import pytest
 from verifiers.clients.client import Client
 from verifiers.types import Response
 from verifiers.types import ResponseMessage
+from verifiers.types import ResponseTokens
+from verifiers.types import Usage
 
 from proof_opd_env import ProofOPDSingleTurnEnv
 from proof_opd_env import load_environment
@@ -46,13 +48,24 @@ class RecordingClient(Client):
             id="single-turn-response",
             created=0,
             model=model,
-            usage=None,
+            usage=Usage(
+                prompt_tokens=4,
+                reasoning_tokens=2,
+                completion_tokens=3,
+                total_tokens=7,
+            ),
             message=ResponseMessage(
                 content="<evaluation>valid</evaluation><score>1</score>",
                 reasoning_content=None,
                 finish_reason="stop",
                 is_truncated=False,
-                tokens=None,
+                tokens=ResponseTokens(
+                    prompt_ids=[1, 2, 3, 4],
+                    prompt_mask=[1, 1, 1, 1],
+                    completion_ids=[5, 6, 7],
+                    completion_mask=[1, 1, 1],
+                    completion_logprobs=[-0.1, -0.2, -0.3],
+                ),
                 tool_calls=None,
             ),
         )
@@ -127,3 +140,10 @@ def test_single_turn_rollout_makes_exactly_one_model_call(tmp_path) -> None:
     assert len(state["trajectory"]) == 1
     assert state["info"]["proof_opd_trace"]["stage"] == "verify"
     assert state["info"]["proof_opd_trace"]["stage_records"][0]["raw_chars"] > 0
+    assert state["info"]["proof_opd_trace"]["generated_tokens"] == 3
+    assert state["info"]["proof_opd_trace"]["reasoning_tokens"] == 2
+
+    asyncio.run(env.rubric.score_rollout(state))
+    assert state["metrics"]["proof_opd_policy_generated_tokens"] == 3
+    assert state["metrics"]["proof_opd_verify_policy_generated_tokens"] == 3
+    assert "proof_opd_prove_policy_generated_tokens" not in state["metrics"]
