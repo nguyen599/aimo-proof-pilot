@@ -31,6 +31,40 @@ tasks:
     value: ${OPD_RUN_NAME}
   - name: OPD_SHARED_ROOT
     value: /weka/aimo-proof-pilot
+  - name: OPD_AUTO_DOWNLOAD_ASSETS
+    value: "1"
+  - name: OPD_STUDENT_HF_REPO
+    value: chankhavu/yccchen-olmo3-deploy
+  - name: OPD_TEACHER_HF_REPO
+    value: deepseek-ai/DeepSeek-V4-Flash
+  - name: OPD_DATASET_HF_REPO
+    value: ycchen/dsflash-proof-distill-v2-test
+  - name: OPD_DATASET_HF_FILENAME
+    value: data/per_turn.parquet
+  - name: MAX_TRAIN_STEPS
+    value: "1000"
+  - name: PRIME_OPD_CTX_LEN
+    value: "81920"
+  - name: PRIME_OPD_VLLM_MAX_MODEL_LEN
+    value: "90112"
+  - name: PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN
+    value: "90112"
+  - name: PRIME_OPD_COMPLETION_TOKENS
+    value: "65000"
+  - name: PRIME_GROUP_SIZE
+    value: "1"
+  - name: PRIME_PACKED_SEQUENCES_PER_STEP
+    value: "64"
+  - name: PRIME_OPD_MAX_INFLIGHT_ROLLOUTS
+    value: "288"
+  - name: PRIME_CHECKPOINT_INTERVAL
+    value: "100"
+  - name: PRIME_OPD_EVAL_INTERVAL
+    value: "50"
+  - name: PRIME_TRAINER_FP8
+    value: "true"
+  - name: PRIME_TRAINER_COMPILE
+    value: "false"
   - name: HF_TOKEN
     secret: HF_TOKEN
   - name: WANDB_API_KEY

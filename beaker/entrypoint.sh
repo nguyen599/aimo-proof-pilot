@@ -38,16 +38,15 @@ LOCAL_ROOT="${OPD_LOCAL_ROOT:-/tmp/aimo-proof-pilot/${RUN_NAME}/node${REPLICA_RA
 CONTROL_DIR="${RUN_ROOT}/beaker-control"
 READY_FILE="${CONTROL_DIR}/launch.ready"
 
-for required in "${STUDENT_MODEL}/config.json" "${TEACHER_MODEL}/config.json" "${DATASET_PATH}"; do
-  if [[ ! -f "${required}" ]]; then
-    echo "[beaker-opd] required asset is missing: ${required}" >&2
-    exit 3
-  fi
-done
-if [[ ! -w "${SHARED_ROOT}" ]]; then
-  echo "[beaker-opd] shared WEKA root is not writable: ${SHARED_ROOT}" >&2
-  exit 3
-fi
+validate_assets() {
+  local required
+  for required in "${STUDENT_MODEL}/config.json" "${TEACHER_MODEL}/config.json" "${DATASET_PATH}"; do
+    if [[ ! -f "${required}" ]]; then
+      echo "[beaker-opd] required asset is missing: ${required}" >&2
+      return 1
+    fi
+  done
+}
 
 mkdir -p "${CONTROL_DIR}" "${LOCAL_ROOT}"
 if (( REPLICA_RANK == 0 )); then
@@ -55,6 +54,19 @@ if (( REPLICA_RANK == 0 )); then
     echo "[beaker-opd] ${RUN_NAME} already has a launch marker; choose a new OPD_RUN_NAME" >&2
     exit 4
   fi
+  if [[ ! -w "${SHARED_ROOT}" ]]; then
+    echo "[beaker-opd] shared WEKA root is not writable: ${SHARED_ROOT}" >&2
+    exit 3
+  fi
+  if [[ "${OPD_AUTO_DOWNLOAD_ASSETS:-1}" == "1" ]]; then
+    OPD_SHARED_ROOT="${SHARED_ROOT}" \
+    OPD_MODEL_ROOT="${MODEL_ROOT}" \
+    OPD_STUDENT_MODEL_PATH="${STUDENT_MODEL}" \
+    OPD_TEACHER_MODEL_PATH="${TEACHER_MODEL}" \
+    OPD_DATASET_PATH="${DATASET_PATH}" \
+      /usr/local/bin/beaker-opd-prepare-assets
+  fi
+  validate_assets || exit 3
   {
     echo "run_name=${RUN_NAME}"
     echo "replicas=${REPLICA_COUNT}"
@@ -63,11 +75,13 @@ if (( REPLICA_RANK == 0 )); then
   } > "${READY_FILE}.tmp"
   mv "${READY_FILE}.tmp" "${READY_FILE}"
 else
-  for _ in $(seq 1 180); do
+  asset_ready_timeout="${OPD_ASSET_READY_TIMEOUT:-14400}"
+  for _ in $(seq 1 $((asset_ready_timeout / 2))); do
     [[ -f "${READY_FILE}" ]] && break
     sleep 2
   done
   [[ -f "${READY_FILE}" ]] || { echo "[beaker-opd] timeout waiting for ${READY_FILE}" >&2; exit 4; }
+  validate_assets || exit 3
 fi
 
 export GLOBAL_RANK="${REPLICA_RANK}"

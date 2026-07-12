@@ -103,23 +103,26 @@ Mount one writable WEKA bucket at `/weka/aimo-proof-pilot`. The final layout is:
   runs/<OPD_RUN_NAME>/
 ```
 
-From a bare Beaker session with the WEKA bucket mounted, run:
+Replica 0 runs this automatically by default and publishes the launch marker
+only after all assets are complete. To stage them before the training
+experiment, run the same helper from a bare Beaker session with WEKA mounted:
 
 ```bash
 OPD_SHARED_ROOT=/weka/aimo-proof-pilot \
-OPD_DATASET_SOURCE=/path/to/per_turn.parquet \
   /usr/local/bin/beaker-opd-prepare-assets
 ```
 
 The script downloads:
 
-- student: `ycchen/proof-pilot-deploy-bundle`, subdirectory
-  `opd-32b-deploy/`;
+- student: `chankhavu/yccchen-olmo3-deploy`;
 - teacher: `deepseek-ai/DeepSeek-V4-Flash`.
+- dataset: `ycchen/dsflash-proof-distill-v2-test`, file
+  `data/per_turn.parquet`.
 
-The current `per_turn.parquet` is about 1.5 GB and is not committed to Git. Copy
-it to the WEKA path above before launching. Asset preparation is resumable via
-the Hugging Face cache and skips complete model directories.
+The current `per_turn.parquet` is about 1.5 GB and is not committed to Git.
+Asset preparation is resumable via the Hugging Face cache and skips complete
+model directories. Set `OPD_AUTO_DOWNLOAD_ASSETS=0` only when all three assets
+were staged and validated separately.
 
 ## 4. Render and submit the experiment
 
@@ -162,6 +165,40 @@ tasks:
     value: ${OPD_RUN_NAME}
   - name: OPD_SHARED_ROOT
     value: /weka/aimo-proof-pilot
+  - name: OPD_AUTO_DOWNLOAD_ASSETS
+    value: "1"
+  - name: OPD_STUDENT_HF_REPO
+    value: chankhavu/yccchen-olmo3-deploy
+  - name: OPD_TEACHER_HF_REPO
+    value: deepseek-ai/DeepSeek-V4-Flash
+  - name: OPD_DATASET_HF_REPO
+    value: ycchen/dsflash-proof-distill-v2-test
+  - name: OPD_DATASET_HF_FILENAME
+    value: data/per_turn.parquet
+  - name: MAX_TRAIN_STEPS
+    value: "1000"
+  - name: PRIME_OPD_CTX_LEN
+    value: "81920"
+  - name: PRIME_OPD_VLLM_MAX_MODEL_LEN
+    value: "90112"
+  - name: PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN
+    value: "90112"
+  - name: PRIME_OPD_COMPLETION_TOKENS
+    value: "65000"
+  - name: PRIME_GROUP_SIZE
+    value: "1"
+  - name: PRIME_PACKED_SEQUENCES_PER_STEP
+    value: "64"
+  - name: PRIME_OPD_MAX_INFLIGHT_ROLLOUTS
+    value: "288"
+  - name: PRIME_CHECKPOINT_INTERVAL
+    value: "100"
+  - name: PRIME_OPD_EVAL_INTERVAL
+    value: "50"
+  - name: PRIME_TRAINER_FP8
+    value: "true"
+  - name: PRIME_TRAINER_COMPILE
+    value: "false"
   - name: HF_TOKEN
     secret: HF_TOKEN
   - name: WANDB_API_KEY
@@ -180,6 +217,26 @@ tasks:
     value: expandable_segments:True
   timeout: 96h
 ```
+
+Every `envVars` entry becomes an ordinary environment variable before
+`beaker-opd-entrypoint.sh` starts. The entrypoint and the OPD command use
+`${NAME:-default}`, so a YAML value wins over the shell default. For example,
+this changes the context, generated-token limit, optimizer-step token target,
+and checkpoint cadence without rebuilding the image:
+
+```yaml
+  envVars:
+  - { name: PRIME_OPD_CTX_LEN, value: "40960" }
+  - { name: PRIME_OPD_COMPLETION_TOKENS, value: "32768" }
+  - { name: PRIME_PACKED_SEQUENCES_PER_STEP, value: "32" }
+  - { name: PRIME_CHECKPOINT_INTERVAL, value: "50" }
+```
+
+Use string values for numbers and booleans in Beaker YAML. Any variable from
+`beaker/entrypoint.sh` or
+`operator_commands/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh`
+can be added the same way. Values that the entrypoint intentionally fixes for
+this topology, such as the eight-node role assignment, are not override knobs.
 
 Render the `${...}` placeholders and submit it:
 
