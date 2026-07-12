@@ -13,6 +13,7 @@ from verifiers.types import Usage
 from proof_opd_env import ProofOPDSingleTurnEnv
 from proof_opd_env import load_environment
 from proof_opd_env import normalize_single_turn_dataset_rows
+from proof_opd_env import record_policy_token_metrics
 
 
 class RecordingClient(Client):
@@ -140,10 +141,35 @@ def test_single_turn_rollout_makes_exactly_one_model_call(tmp_path) -> None:
     assert len(state["trajectory"]) == 1
     assert state["info"]["proof_opd_trace"]["stage"] == "verify"
     assert state["info"]["proof_opd_trace"]["stage_records"][0]["raw_chars"] > 0
-    assert state["info"]["proof_opd_trace"]["generated_tokens"] == 3
-    assert state["info"]["proof_opd_trace"]["reasoning_tokens"] == 2
+    assert "generated_tokens" not in state["info"]["proof_opd_trace"]
+    assert "generated_tokens" not in state["info"]["proof_opd_trace"]["stage_records"][0]
 
     asyncio.run(env.rubric.score_rollout(state))
     assert state["metrics"]["proof_opd_policy_generated_tokens"] == 3
+    assert state["metrics"]["proof_opd_policy_reasoning_tokens"] == 2
     assert state["metrics"]["proof_opd_verify_policy_generated_tokens"] == 3
     assert "proof_opd_prove_policy_generated_tokens" not in state["metrics"]
+
+
+def test_policy_token_metrics_accumulate_across_stages() -> None:
+    state = {}
+    record_policy_token_metrics(
+        state,
+        "proof",
+        {"prompt_tokens": 10, "generated_tokens": 20, "reasoning_tokens": 5, "total_tokens": 30},
+    )
+    record_policy_token_metrics(
+        state,
+        "verifier",
+        {"prompt_tokens": 30, "generated_tokens": 7, "reasoning_tokens": 2, "total_tokens": 37},
+    )
+    record_policy_token_metrics(
+        state,
+        "verifier",
+        {"prompt_tokens": 31, "generated_tokens": 8, "reasoning_tokens": 3, "total_tokens": 39},
+    )
+
+    assert state["metrics"]["proof_opd_policy_generated_tokens"] == 35
+    assert state["metrics"]["proof_opd_proof_policy_generated_tokens"] == 20
+    assert state["metrics"]["proof_opd_verifier_policy_generated_tokens"] == 15
+    assert state["metrics"]["proof_opd_verifier_policy_reasoning_tokens"] == 5

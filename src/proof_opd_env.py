@@ -636,6 +636,23 @@ def trajectory_step_token_counts(step: Any) -> dict[str, int]:
     return counts
 
 
+def record_policy_token_metrics(
+    state: dict[str, Any],
+    stage: str,
+    counts: dict[str, int],
+) -> None:
+    """Accumulate policy token usage as numeric rollout metrics for W&B."""
+    normalized_stage = re.sub(r"[^a-z0-9]+", "_", str(stage).strip().lower()).strip("_") or "single"
+    metrics = dict(state.get("metrics") or {})
+    for name, value in counts.items():
+        numeric_value = float(value)
+        total_key = f"proof_opd_policy_{name}"
+        stage_key = f"proof_opd_{normalized_stage}_policy_{name}"
+        metrics[total_key] = float(metrics.get(total_key, 0.0) or 0.0) + numeric_value
+        metrics[stage_key] = float(metrics.get(stage_key, 0.0) or 0.0) + numeric_value
+    state["metrics"] = metrics
+
+
 def json_loads_maybe(value: Any) -> Any:
     if not isinstance(value, str):
         return value
@@ -1141,11 +1158,7 @@ class ProofOPDSingleTurnRubric(ProofOPDRubric):
             stage = "single"
         trajectory = state.get("trajectory") or []
         counts = trajectory_step_token_counts(trajectory[-1] if trajectory else None)
-        metrics = dict(state.get("metrics") or {})
-        for name, value in counts.items():
-            metrics[f"proof_opd_policy_{name}"] = float(value)
-            metrics[f"proof_opd_{stage}_policy_{name}"] = float(value)
-        state["metrics"] = metrics
+        record_policy_token_metrics(state, stage, counts)
 
 
 class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
@@ -1166,23 +1179,17 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
         info = dict(state.get("info") or {})
         stage = str(state.get("proof_opd_stage") or info.get("stage") or "single")
         raw_output, is_truncated, finish_reason = "", False, ""
-        token_counts = trajectory_step_token_counts(None)
         trajectory = state.get("trajectory") or []
         if trajectory:
             raw_output = trajectory_step_text(trajectory[-1])
             is_truncated = trajectory_step_is_truncated(trajectory[-1])
             finish_reason = trajectory_step_finish_reason(trajectory[-1])
-            token_counts = trajectory_step_token_counts(trajectory[-1])
         info["proof_opd_trace"] = {
-            "task_id": info.get("task_id") or state.get("task_id"),
             "source_index": info.get("source_index") or state.get("source_index"),
-            "task_type": "opd_single_turn",
             "stage": stage,
             "problem": clipped_trace_text(state.get("problem", "")),
-            "reward": float(state.get("reward") or 0.0),
             "finish_reason": finish_reason,
             "is_truncated": is_truncated,
-            **token_counts,
             "stage_records": [
                 {
                     "stage": stage,
@@ -1193,7 +1200,6 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
                     "is_truncated": is_truncated,
                     "finish_reason": finish_reason,
                     "source": "single_turn_dataset",
-                    **token_counts,
                 }
             ],
             "raw_output_excerpt": clipped_trace_text(raw_output),
@@ -1973,6 +1979,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
     ) -> None:
         trajectory = state.get("trajectory") or []
         token_counts = trajectory_step_token_counts(trajectory[-1] if trajectory else None)
+        record_policy_token_metrics(state, stage, token_counts)
         state.setdefault("proof_opd_stage_records", []).append(
             {
                 "stage": stage,
@@ -1984,7 +1991,6 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 "is_truncated": bool(is_truncated),
                 "finish_reason": finish_reason,
                 "invalid_reason": invalid_reason,
-                **token_counts,
             }
         )
 
