@@ -141,9 +141,7 @@ else:
 PY
 
 # Generic Docker GPU providers expose container port 22 but do not inject an SSH daemon into
-# arbitrary images. Keep SSH key-only and let the provider mount /root/.ssh/authorized_keys; an
-# explicit SSH_PUBLIC_KEY environment variable is also supported for providers that only pass the
-# key through environment configuration.
+# arbitrary images. Keep SSH key-only and let the provider mount /root/.ssh/authorized_keys.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openssh-server && \
     mkdir -p /run/sshd /root/.ssh && \
@@ -156,92 +154,8 @@ RUN apt-get update && \
         > /etc/ssh/sshd_config.d/99-aimo-proof-pilot.conf && \
     rm -rf /var/lib/apt/lists/*
 
-# --- Remote-shell daemon as the default entrypoint (crash-resilient supervisor). Training runs
-# THROUGH the relay shell sessions the daemon exposes (open a shell, then run /app/train.py ...),
-# instead of train.py being PID 1. The daemon is outbound-only HTTPS to a private HF Space relay
-# (NII-approved). Config — HF_TOKEN, RELAY_SPACE, CLIENT_ID — is provided at RUNTIME; no secrets baked.
-COPY remote-shell/daemon /app/remote-shell/daemon
-# Install daemon dependencies into the same Python used by the entrypoint.
-# Avoid a separate /opt/venv-daemon path because some container runtimes mount it without execute
-# permission, which prevents the relay daemon from starting.
-RUN uv pip install --system --no-cache-dir -r /app/remote-shell/daemon/requirements.txt
-COPY <<'EOF' /app/entrypoint.sh
-#!/bin/bash
-# PID 1. The container runs INDEFINITELY — only an external SIGKILL / teardown stops it. The
-# remote-shell daemon is restarted on any crash/exit. A LOUD banner is printed to the container's
-# STDOUT (what the launcher sees via `docker logs` / the terminal), and the daemon's own output is
-# tee'd to STDOUT too, so it's obvious the daemon is up.
-set +e
-trap '' TERM INT HUP PIPE QUIT      # ignore graceful signals; only SIGKILL ends this loop
-LOGS=/tmp/imochallenge/logs; LOG="$LOGS/relay-daemon.log"
-mkdir -p "$LOGS" 2>/dev/null
-mkdir -p /run/sshd /root/.ssh 2>/dev/null
-chmod 700 /root/.ssh 2>/dev/null
-SSH_AUTHORIZED_KEY="${SSH_PUBLIC_KEY:-${PUBLIC_KEY:-${SSH_PUB_KEY:-}}}"
-if [ -n "$SSH_AUTHORIZED_KEY" ]; then
-    touch /root/.ssh/authorized_keys
-    grep -qxF "$SSH_AUTHORIZED_KEY" /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' "$SSH_AUTHORIZED_KEY" >> /root/.ssh/authorized_keys
-    chmod 600 /root/.ssh/authorized_keys
-fi
-ssh-keygen -A >/dev/null 2>&1
-/usr/sbin/sshd -E "$LOGS/sshd.log" || printf '[entrypoint] WARNING: sshd failed; see %s\n' "$LOGS/sshd.log"
-announce() {
-    printf '\n============================================================\n'
-    printf '  REMOTE-SHELL DAEMON %s\n' "$1"
-    printf '  client_id = %s\n' "${CLIENT_ID:-$(hostname 2>/dev/null)}"
-    printf '  container runs until killed  |  logs: %s\n' "$LOG"
-    printf '============================================================\n\n'
-}
-announce "STARTING"
-# One-shot preflight smoke test (env/system checks: distributed env vars, CUDA driver, /tmp+$HOME
-# writable, creds, disk). Its PASS/WARN/FAIL report goes to STDOUT + the daemon log, so it's visible
-# via `docker logs` / the control panel at boot. It does NOT gate the daemon — the daemon must stay up
-# for remote control even if a check FAILs (so you can fix + relaunch remotely).
-if [ -f /app/smoke_test_opd.py ]; then
-    /usr/bin/python /app/smoke_test_opd.py 2>&1 | tee -a "$LOG" || true
-fi
-while :; do
-    announce "RUNNING (daemon (re)starting)"
-    python /app/remote-shell/daemon/client.py 2>&1 | tee -a "$LOG"
-    printf '[supervisor %s] daemon exited — restart in 5s\n' "$(date -u '+%F %T' 2>/dev/null)" | tee -a "$LOG"
-    sleep 5 2>/dev/null || true
-done
-EOF
-RUN chmod +x /app/entrypoint.sh
+COPY --chmod=600 docker_authorized_keys /root/.ssh/authorized_keys
+RUN ssh-keygen -A && sshd -t
 
-# opd-run / opd-status: launch training FULLY DETACHED so it survives daemon crashes/restarts and
-# the shell closing, and stays identifiable + monitorable.
-COPY <<'EOF' /usr/local/bin/opd-run
-#!/bin/bash
-# opd-run <name> <cmd...> — setsid+nohup a command -> /tmp/imochallenge/logs/<name>.log + <name>.pid
-set -euo pipefail
-[ "$#" -ge 2 ] || { echo "usage: opd-run <name> <command...>" >&2; exit 2; }
-name=$1; shift
-run=/tmp/imochallenge/run; logs=/tmp/imochallenge/logs; mkdir -p "$run" "$logs"
-log="$logs/$name.log"; pidf="$run/$name.pid"
-if [ -f "$pidf" ] && kill -0 "$(cat "$pidf" 2>/dev/null || echo -1)" 2>/dev/null; then
-    echo "opd-run: '$name' already running (pid $(cat "$pidf"))" >&2; exit 1
-fi
-setsid bash -c 'echo "[opd-run start $(date -u)] $*"; "$@"; echo "[opd-run exit $? $(date -u)]"' _ "$@" >>"$log" 2>&1 &
-echo $! >"$pidf"
-echo "opd-run: '$name' started (pid $(cat "$pidf"))  log=$log"
-EOF
-COPY <<'EOF' /usr/local/bin/opd-status
-#!/bin/bash
-# opd-status [name] — list detached opd-run jobs (alive/dead + last log lines)
-run=/tmp/imochallenge/run; logs=/tmp/imochallenge/logs; shopt -s nullglob
-if [ "$#" -ge 1 ]; then set -- "$1"; else set --; for f in "$run"/*.pid; do set -- "$@" "$(basename "$f" .pid)"; done; fi
-[ "$#" -gt 0 ] || { echo "no runs under $run"; exit 0; }
-for n in "$@"; do
-    pidf="$run/$n.pid"; log="$logs/$n.log"; pid=$(cat "$pidf" 2>/dev/null || echo '?')
-    if [ "$pid" != '?' ] && kill -0 "$pid" 2>/dev/null; then st=RUNNING; else st=stopped; fi
-    printf '== %-20s [%s] pid=%s\n' "$n" "$st" "$pid"
-    [ -f "$log" ] && tail -n 3 "$log" | sed 's/^/   /'
-done
-EOF
-RUN chmod +x /usr/local/bin/opd-run /usr/local/bin/opd-status
-
-# Was: ENTRYPOINT ["python", "/app/train.py"]. train.py still runs — just from inside a relay shell,
-# e.g.:  python /app/train.py --backend prime_rl --prime_algorithm opd ...
 EXPOSE 22
-ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["/usr/sbin/sshd", "-D", "-e"]
