@@ -477,12 +477,16 @@ TOKEN_BATCH_SIZE=$((CTX_LEN * PACKED_SEQUENCES_PER_STEP))
 INFLIGHT_PER_POLICY_NODE="${PRIME_OPD_INFLIGHT_ROLLOUTS_PER_POLICY_NODE:-48}"
 DEFAULT_MAX_INFLIGHT=$((INFLIGHT_PER_POLICY_NODE * POLICY_NODE_COUNT))
 MAX_INFLIGHT="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-${DEFAULT_MAX_INFLIGHT}}"
+MAX_INFLIGHT_QUESTIONS="${PRIME_OPD_MAX_INFLIGHT_QUESTIONS:-0}"
 if [[ -n "${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-}" ]]; then
   echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (explicit override)"
 else
   echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (${INFLIGHT_PER_POLICY_NODE}/policy_node)"
 fi
 echo "[prime-opd-3node] candidate_gate group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT} proof_only=$((GROUP_SIZE - CANDIDATE_CONTINUE_COUNT))"
+if (( MAX_INFLIGHT_QUESTIONS > 0 )); then
+  echo "[prime-opd-3node] max_inflight_questions=${MAX_INFLIGHT_QUESTIONS} (fresh questions pause at cap; continuation turns remain eligible)"
+fi
 echo "[prime-opd-3node] full-environment batching token_batch_size=${TOKEN_BATCH_SIZE} (${PACKED_SEQUENCES_PER_STEP} packed sequences x seq_len ${CTX_LEN})"
 MAX_OFF_POLICY="${PRIME_MAX_OFF_POLICY_STEPS:-24}"
 TRAIN_GPU_COUNT="${PRIME_TRAIN_GPUS:-${DEFAULT_TRAIN_GPU_COUNT}}"
@@ -708,6 +712,9 @@ COMMON_ARGS=(
   --wandb_mode online
   --wandb_project "${WANDB_PROJECT}"
 )
+if (( MAX_INFLIGHT_QUESTIONS > 0 )); then
+  COMMON_ARGS+=(--prime_max_inflight_questions "${MAX_INFLIGHT_QUESTIONS}")
+fi
 
 case "${PRIME_COMPONENT_ROLE}" in
   policy_inference)

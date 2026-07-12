@@ -966,6 +966,14 @@ class ProofOPDRubric(vf.Rubric):
 
 
 class ProofOPDEnv(vf.MultiTurnEnv):
+    _PRIORITY_STAGE_OFFSETS = {
+        "selector": -5_000_000_000,
+        "meta": -4_000_000_000,
+        "verifier": -3_000_000_000,
+        "refine": -2_000_000_000,
+        "proof": 0,
+    }
+
     def __init__(
         self,
         *,
@@ -992,6 +1000,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         self.candidate_gate_enabled = parse_bool(candidate_gate_enabled, False)
         self.candidate_continue_count = max(1, int(candidate_continue_count))
         self._candidate_gate_groups: dict[str, dict[str, Any]] = {}
+        self._question_sequence = 0
         turns_per_round = 1 + self.num_verifiers * (2 if self.enable_meta_verification else 1)
         super().__init__(max_turns=turns_per_round * (self.refine_rounds + 1) + 2, **kwargs)
 
@@ -1010,6 +1019,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             return await super()._run_group_states(group_inputs, client, model, sampling_args)
 
         group_id = uuid.uuid4().hex
+        question_sequence = self._question_sequence
+        self._question_sequence += 1
         group = {
             "condition": asyncio.Condition(),
             "expected": len(group_inputs),
@@ -1033,6 +1044,7 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                     "candidate_group_size": len(group_inputs),
                     "candidate_index": candidate_index,
                     "candidate_continue_count": group["continue_count"],
+                    "question_sequence": question_sequence,
                 }
             )
             candidate_input["info"] = info
@@ -1065,6 +1077,48 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         state["proof_opd_selector_candidates"] = []
         state["proof_opd_selector"] = None
         state["proof_opd_reward_payload"] = None
+        info = self._input_info(state)
+        state["proof_opd_question_sequence"] = int(
+            info.get("question_sequence", self._question_sequence)
+        )
+
+    async def get_model_response(
+        self,
+        state: vf.State,
+        prompt: vf.Messages,
+        client: Any = None,
+        model: str | None = None,
+        tool_defs: Any = None,
+        sampling_args: Any = None,
+    ) -> Any:
+        request_args = dict(sampling_args or state.get("sampling_args") or {})
+        extra_body = dict(request_args.get("extra_body") or {})
+        stage = str(state.get("proof_opd_stage") or "proof")
+        question_sequence = int(state.get("proof_opd_question_sequence", 0))
+        priority = self._request_priority(state)
+        sampling_extra = dict(extra_body.get("extra_args") or {})
+        sampling_extra["prime_priority"] = priority
+        extra_body["extra_args"] = sampling_extra
+        request_args["extra_body"] = extra_body
+        LOGGER.info(
+            "Proof-OPD scheduling request stage=%s question_sequence=%d priority=%d",
+            stage,
+            question_sequence,
+            priority,
+        )
+        return await super().get_model_response(
+            state,
+            prompt,
+            client=client,
+            model=model,
+            tool_defs=tool_defs,
+            sampling_args=request_args,
+        )
+
+    def _request_priority(self, state: vf.State) -> int:
+        stage = str(state.get("proof_opd_stage") or "proof")
+        question_sequence = int(state.get("proof_opd_question_sequence", 0))
+        return self._PRIORITY_STAGE_OFFSETS.get(stage, 0) + question_sequence
 
     def _input_value(self, state: vf.State, key: str) -> str:
         value = state.get("input", {}).get(key)

@@ -36,12 +36,15 @@ def test_packed_sequence_target_uses_prime_token_batching() -> None:
         "64",
         "--prime_max_inflight_rollouts",
         "48",
+        "--prime_max_inflight_questions",
+        "4",
     )
 
     config = build_prime_rl_config(args, Path("/tmp/output"))
 
     assert config["orchestrator"]["batch_size"] is None
     assert config["orchestrator"]["token_batch_size"] == 8192 * 64
+    assert config["orchestrator"]["max_inflight_questions"] == 4
     assert config["train_envs"][0]["group_size"] == 1
 
 

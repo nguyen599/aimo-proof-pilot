@@ -82,16 +82,18 @@ def test_one_node_production_command_uses_requested_long_context_shape() -> None
     assert 'PRIME_VLLM_DP:-4' in text
     assert 'PRIME_OPD_POLICY_MAX_NUM_SEQS:-6' in text
     assert 'PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-24' in text
+    assert 'PRIME_OPD_MAX_INFLIGHT_QUESTIONS:-4' in text
     assert 'MAX_TRAIN_STEPS:-1000' in text
     assert 'PRIME_OPD_CTX_LEN:-81920' in text
     assert 'PRIME_OPD_VLLM_MAX_MODEL_LEN:-90112' in text
     assert 'PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN:-90112' in text
     assert 'PRIME_OPD_TEACHER_KV_CACHE_MEMORY_BYTES:-39728447488' in text
     assert 'PRIME_OPD_TEACHER_CPU_OFFLOAD_GB:-16' in text
-    assert 'PRIME_OPD_COMPLETION_TOKENS:-75000' in text
-    assert 'PRIME_GROUP_SIZE:-8' in text
-    assert 'PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4' in text
-    assert 'PRIME_PACKED_SEQUENCES_PER_STEP:-64' in text
+    assert 'PRIME_OPD_COMPLETION_TOKENS:-65000' in text
+    assert 'PRIME_GROUP_SIZE:-4' in text
+    assert 'PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-2' in text
+    assert 'PRIME_TEMPERATURE:-1.0' in text
+    assert 'PRIME_PACKED_SEQUENCES_PER_STEP:-12' in text
     assert 'PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION:-0.96' in text
     assert 'PRIME_CHECKPOINT_INTERVAL:-100' in text
     assert 'WANDB_MODE=online' in text

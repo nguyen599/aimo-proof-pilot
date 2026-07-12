@@ -470,6 +470,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
         "seq_len": args.max_seq_length,
         "max_steps": args.max_train_steps,
         "max_inflight_rollouts": args.prime_max_inflight_rollouts,
+        "max_inflight_questions": args.prime_max_inflight_questions,
         "max_off_policy_steps": args.prime_max_off_policy_steps,
         "oversampling_factor": (
             args.prime_oversampling_factor if token_batch_size is None else None
@@ -1190,6 +1191,15 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         ),
     )
     parser.add_argument("--prime_max_inflight_rollouts", type=int, default=None)
+    parser.add_argument(
+        "--prime_max_inflight_questions",
+        type=int,
+        default=None,
+        help=(
+            "Cap concurrently active question groups without blocking continuation "
+            "turns inside existing proof/verifier/meta/refine rollouts."
+        ),
+    )
     parser.add_argument(
         "--prime_max_off_policy_steps",
         type=int,
