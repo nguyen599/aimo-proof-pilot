@@ -25,6 +25,7 @@ TVM_FFI_SPEC="${TVM_FFI_SPEC:-apache-tvm-ffi<0.1.12}"
 TRANSFORMER_ENGINE_WHEEL_REPO="nguyen599/prebuild-wheels-util"
 TRANSFORMER_ENGINE_WHEEL_FILE="${TRANSFORMER_ENGINE_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/transformer_engine-2.17.0.dev0-cp312-cp312-linux_x86_64.whl}"
 TRANSFORMER_ENGINE_FALLBACK_SPEC="${TRANSFORMER_ENGINE_FALLBACK_SPEC:-transformer_engine[pytorch]}"
+TRANSFORMER_ENGINE_FALLBACK_VERSION="${TRANSFORMER_ENGINE_FALLBACK_VERSION:-2.17.0}"
 APEX_PREBUILT_WHEEL_FILE="${APEX_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/apex-0.1-cp312-cp312-linux_x86_64.whl}"
 CAUSAL_CONV1D_PREBUILT_WHEEL_FILE="${CAUSAL_CONV1D_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/causal_conv1d-1.6.2.post1-cp312-cp312-linux_x86_64.whl}"
 MAMBA_SSM_PREBUILT_WHEEL_FILE="${MAMBA_SSM_PREBUILT_WHEEL_FILE:-${PREBUILT_WHEELS_DIR}/mamba_ssm-2.3.2.post1-py3-none-any.whl}"
@@ -393,6 +394,15 @@ if [ "${INSTALL_TRANSFORMER_ENGINE}" = "1" ]; then
             "${TRANSFORMER_ENGINE_WHEEL_PATH}"; then
             uv_pip install --compile-bytecode --no-cache-dir \
                 "${TRANSFORMER_ENGINE_WHEEL_PATH}"
+        elif [ "${CUDA_MAJOR}" = "12" ]; then
+            echo "Installing explicit Transformer Engine cu12 fallback ${TRANSFORMER_ENGINE_FALLBACK_VERSION}"
+            uv_pip install --no-cache-dir \
+                "transformer-engine-cu12==${TRANSFORMER_ENGINE_FALLBACK_VERSION}"
+            NVTE_FRAMEWORK=pytorch uv_pip install --compile-bytecode --no-cache-dir \
+                --no-build-isolation --no-deps \
+                "transformer-engine-torch==${TRANSFORMER_ENGINE_FALLBACK_VERSION}"
+            uv_pip install --no-cache-dir --no-deps \
+                "transformer-engine==${TRANSFORMER_ENGINE_FALLBACK_VERSION}"
         else
             echo "Installing Transformer Engine fallback for ${CUDA_WHEEL_TAG}: ${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
             uv_pip install --compile-bytecode --no-cache-dir --no-build-isolation \

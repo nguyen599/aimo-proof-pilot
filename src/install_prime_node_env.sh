@@ -3,6 +3,8 @@ set -euxo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
+ulimit -n "$(ulimit -Hn)"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${VENV_DIR:-/opt/aimo-proof-pilot-venv}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
