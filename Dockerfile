@@ -156,9 +156,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --chmod=600 docker_authorized_keys /root/.ssh/authorized_keys
-COPY --chmod=755 docker_ssh_entrypoint.sh /usr/local/bin/prime-template-entrypoint.sh
-RUN ln -s /usr/local/bin/prime-template-entrypoint.sh /usr/local/bin/aimo-proof-pilot-entrypoint.sh
+COPY --chmod=755 docker_ssh_entrypoint.sh /start.sh
+RUN ln -s /start.sh /usr/local/bin/prime-template-entrypoint.sh && \
+    ln -s /start.sh /usr/local/bin/aimo-proof-pilot-entrypoint.sh
 RUN ssh-keygen -A && sshd -t
 
 EXPOSE 22
-ENTRYPOINT ["/usr/local/bin/prime-template-entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/start.sh"]
