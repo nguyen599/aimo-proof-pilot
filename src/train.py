@@ -1997,7 +1997,16 @@ def prime_rl_source_requirements() -> list[str]:
     override = os.environ.get("PRIME_RL_SOURCE_REQUIREMENTS")
     if override:
         return [requirement for requirement in shlex.split(override) if requirement]
-    return list(DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS)
+    requirements = list(DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS)
+    if DEFAULT_CUDA_MAJOR < 13:
+        # The v0.5.0 release wheel links against libcudart.so.13. Prime-RL
+        # falls back to the DeepGEMM bundled in vLLM on CUDA 12 nodes.
+        requirements = [
+            requirement
+            for requirement in requirements
+            if not requirement.strip().startswith("deep-gemm @")
+        ]
+    return requirements
 
 
 def prime_rl_source_requirements_string() -> str:

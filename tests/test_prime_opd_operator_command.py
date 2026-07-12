@@ -4,7 +4,9 @@ import os
 import subprocess
 from pathlib import Path
 
+import train
 from train import prime_rl_runtime_requirements
+from train import prime_rl_source_requirements
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +19,15 @@ def test_prime_runtime_installs_verifiers_sandbox_dependency(monkeypatch) -> Non
     requirements = prime_rl_runtime_requirements()
 
     assert any(requirement.startswith("prime-sandboxes>=") for requirement in requirements)
+
+
+def test_cuda12_uses_vllm_bundled_deep_gemm(monkeypatch) -> None:
+    monkeypatch.delenv("PRIME_RL_SOURCE_REQUIREMENTS", raising=False)
+    monkeypatch.setattr(train, "DEFAULT_CUDA_MAJOR", 12)
+
+    requirements = prime_rl_source_requirements()
+
+    assert not any(requirement.startswith("deep-gemm @") for requirement in requirements)
 
 
 def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: Path) -> None:
