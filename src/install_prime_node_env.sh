@@ -117,14 +117,16 @@ VLLM_BUILD_FROM_SOURCE=0 \
 bash "${SCRIPT_DIR}/install_training_deps.sh"
 
 # vLLM and media dependencies may resolve CUDA 12.9 companion wheels from
-# their own indexes. Re-pin the complete PyTorch family to the node's CUDA 12.8
-# index so transformers' optional media imports cannot break model bootstrap.
+# their own indexes. Re-pin the PyTorch companion wheels to the node's CUDA
+# 12.8 index so transformers' optional media imports cannot break bootstrap.
+# Use the explicit local-version suffix because PEP 440 considers a cu129 wheel
+# to satisfy a plain ==2.11.0 requirement.
 uv pip install \
-    --index-strategy unsafe-best-match \
+    --no-deps \
     --index-url "${PYTORCH_INDEX_URL}" \
-    "torch==${TORCH_VERSION}" \
-    "torchaudio==${TORCHAUDIO_VERSION}" \
-    "torchvision==${TORCHVISION_VERSION}"
+    "torchaudio==${TORCHAUDIO_VERSION}+cu128" \
+    "torchvision==${TORCHVISION_VERSION}+cu128"
+uv pip install --no-deps "nvidia-nccl-cu12==2.29.3"
 
 # Noninteractive SSH commands do not source /etc/profile.d on all Prime images.
 # Expose only the training entry points through /usr/local/bin; Ubuntu services
