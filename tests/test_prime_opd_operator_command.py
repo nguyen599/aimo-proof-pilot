@@ -4,9 +4,19 @@ import os
 import subprocess
 from pathlib import Path
 
+from train import prime_rl_runtime_requirements
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMAND = REPO_ROOT / "operator_commands" / "prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh"
+
+
+def test_prime_runtime_installs_verifiers_sandbox_dependency(monkeypatch) -> None:
+    monkeypatch.delenv("PRIME_RL_RUNTIME_REQUIREMENTS", raising=False)
+
+    requirements = prime_rl_runtime_requirements()
+
+    assert any(requirement.startswith("prime-sandboxes>=") for requirement in requirements)
 
 
 def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: Path) -> None:

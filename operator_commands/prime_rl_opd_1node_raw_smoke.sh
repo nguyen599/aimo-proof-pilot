@@ -25,6 +25,7 @@ export PRIME_3NODE_RUNTIME_BASE="${PRIME_3NODE_RUNTIME_BASE:-${RUN_ROOT}/runtime
 export PRIME_OPD_OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${RUN_ROOT}/output}"
 export PRIME_OPD_LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${RUN_ROOT}/logs}"
 export PRIME_OPD_CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${RUN_ROOT}/checkpoints}"
+export DG_JIT_CACHE_DIR="${DG_JIT_CACHE_DIR:-${PRIME_SMOKE_ROOT:-/alloc/prime-opd-smoke}/cache/deep_gemm}"
 
 # The raw Prime node is CUDA 12.8 and already carries a compatible vLLM 0.24
 # build. The main cluster command otherwise pins a CUDA 13 development wheel.

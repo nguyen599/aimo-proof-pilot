@@ -272,6 +272,9 @@ DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
     "pandas>=2.0",
     "msgspec>=0.18",
     "tomli-w>=1.2.0",
+    # The vendored Verifiers package imports SandboxMixin while loading legacy
+    # environments, even when the selected environment does not use a sandbox.
+    "prime-sandboxes>=0.2.27",
     "weave",
 )
 PROTECTED_RUNTIME_OVERLAY_PACKAGES = (
