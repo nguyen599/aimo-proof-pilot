@@ -124,7 +124,64 @@ the Hugging Face cache and skips complete model directories.
 ## 4. Render and submit the experiment
 
 Use a unique run name. Every replica receives the same value, which is required
-for rendezvous and shared output paths.
+for rendezvous and shared output paths. This is the complete Beaker spec used by
+the deployment; the checked-in `experiment.yaml.template` contains the same
+YAML.
+
+```yaml
+version: v2
+budget: ${BEAKER_BUDGET}
+description: OLMo3Sink 32B full-vocab OPD on 8x8 B200
+retry:
+  allowedTaskRetries: 2
+tasks:
+- name: opd-full-vocab
+  image:
+    docker: ${BEAKER_IMAGE}
+  command:
+  - /usr/local/bin/beaker-opd-entrypoint.sh
+  replicas: 8
+  leaderSelection: true
+  hostNetworking: true
+  propagateFailure: true
+  propagatePreemption: true
+  synchronizedStartTimeout: 30m
+  resources:
+    gpuCount: 8
+  constraints:
+    cluster:
+    - ai2/titan-cirrascale
+  context:
+    priority: normal
+  datasets:
+  - mountPath: /weka/aimo-proof-pilot
+    source:
+      weka: ${WEKA_BUCKET}
+  envVars:
+  - name: OPD_RUN_NAME
+    value: ${OPD_RUN_NAME}
+  - name: OPD_SHARED_ROOT
+    value: /weka/aimo-proof-pilot
+  - name: HF_TOKEN
+    secret: HF_TOKEN
+  - name: WANDB_API_KEY
+    secret: WANDB_API_KEY
+  - name: GITHUB_TOKEN
+    secret: GITHUB_TOKEN
+  - name: WANDB_PROJECT
+    value: olmo3-prime-rl-full-vocab
+  - name: NCCL_SOCKET_IFNAME
+    value: ib
+  - name: NCCL_IB_HCA
+    value: ^=mlx5_bond_0
+  - name: NCCL_DEBUG
+    value: INFO
+  - name: PYTORCH_ALLOC_CONF
+    value: expandable_segments:True
+  timeout: 96h
+```
+
+Render the `${...}` placeholders and submit it:
 
 ```bash
 export BEAKER_BUDGET=ai2/YOUR_BUDGET
