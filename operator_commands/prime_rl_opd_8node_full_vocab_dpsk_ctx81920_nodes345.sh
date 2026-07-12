@@ -655,6 +655,12 @@ launch_train() {
   exec "$@"
 }
 
+if [[ -n "${PRIME_TOKEN_BATCH_SIZE:-}" ]]; then
+  BATCH_TARGET_ARGS=(--prime_token_batch_size "${PRIME_TOKEN_BATCH_SIZE}")
+else
+  BATCH_TARGET_ARGS=(--prime_packed_sequences_per_step "${PACKED_SEQUENCES_PER_STEP}")
+fi
+
 COMMON_ARGS=(
   --fetch-update
   --submissions-repo "${SUBMISSIONS_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}"
@@ -722,7 +728,7 @@ COMMON_ARGS=(
   --prime_eval_answer_column auto
   --prime_batch_size "${BATCH_SIZE}"
   --prime_group_size "${GROUP_SIZE}"
-  --prime_packed_sequences_per_step "${PACKED_SEQUENCES_PER_STEP}"
+  "${BATCH_TARGET_ARGS[@]}"
   --prime_max_inflight_rollouts "${MAX_INFLIGHT}"
   --prime_max_off_policy_steps "${MAX_OFF_POLICY}"
   --prime_gpus_per_node 8
