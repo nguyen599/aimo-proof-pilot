@@ -230,11 +230,14 @@ TEACHER_TP="${PRIME_OPD_TEACHER_TP:-${DEFAULT_TEACHER_TP}}"
 TEACHER_DP="${PRIME_OPD_TEACHER_DP:-${DEFAULT_TEACHER_DP}}"
 TEACHER_GPU_IDS="${PRIME_OPD_TEACHER_GPU_IDS:-${DEFAULT_TEACHER_GPU_IDS}}"
 TEACHER_VLLM_EXTRA_DEFAULT="$(
-  TEACHER_TP="${TEACHER_TP}" python - <<'PY'
+  TEACHER_TP="${TEACHER_TP}" \
+  TEACHER_KV_CACHE_MEMORY_BYTES="${PRIME_OPD_TEACHER_KV_CACHE_MEMORY_BYTES:-0}" \
+  python - <<'PY'
 import json
 import os
 
 tp = int(os.environ["TEACHER_TP"])
+kv_cache_memory_bytes = int(os.environ.get("TEACHER_KV_CACHE_MEMORY_BYTES", "0") or "0")
 extra = {
     "kv_cache_dtype": "fp8",
     "block_size": 256,
@@ -248,6 +251,8 @@ extra = {
     },
     "additional_config": {},
 }
+if kv_cache_memory_bytes > 0:
+    extra["kv_cache_memory_bytes"] = kv_cache_memory_bytes
 if tp > 2:
     extra["disable_custom_all_reduce"] = True
 print(json.dumps(extra, separators=(",", ":")))
