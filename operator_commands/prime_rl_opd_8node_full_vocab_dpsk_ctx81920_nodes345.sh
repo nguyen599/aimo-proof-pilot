@@ -447,6 +447,7 @@ CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME
 
 CTX_LEN="${PRIME_OPD_CTX_LEN:-8192}"
 VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-16384}"
+TEACHER_VLLM_CTX_LEN="${PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN:-${VLLM_CTX_LEN}}"
 COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-8192}"
 EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-8192}"
 BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
@@ -454,9 +455,9 @@ BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 # The teacher endpoint is used for serialized hidden-state scoring, so keep its
 # startup profiling shape much smaller than the policy rollout endpoint.
 TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-32768}"
-if (( TEACHER_BATCHED_TOKENS < VLLM_CTX_LEN )); then
-  echo "[prime-opd-3node] raising teacher max_num_batched_tokens from ${TEACHER_BATCHED_TOKENS} to ${VLLM_CTX_LEN} to satisfy vLLM max_model_len validation"
-  TEACHER_BATCHED_TOKENS="${VLLM_CTX_LEN}"
+if (( TEACHER_BATCHED_TOKENS < TEACHER_VLLM_CTX_LEN )); then
+  echo "[prime-opd-3node] raising teacher max_num_batched_tokens from ${TEACHER_BATCHED_TOKENS} to ${TEACHER_VLLM_CTX_LEN} to satisfy vLLM max_model_len validation"
+  TEACHER_BATCHED_TOKENS="${TEACHER_VLLM_CTX_LEN}"
 fi
 MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
@@ -748,7 +749,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_ready_timeout "${PRIME_OPD_TEACHER_READY_TIMEOUT:-7200}" \
       --prime_opd_teacher_vllm_tensor_parallel_size "${TEACHER_TP}" \
       --prime_opd_teacher_vllm_data_parallel_size "${TEACHER_DP}" \
-      --prime_opd_teacher_vllm_max_model_len "${VLLM_CTX_LEN}" \
+      --prime_opd_teacher_vllm_max_model_len "${TEACHER_VLLM_CTX_LEN}" \
       --prime_opd_teacher_vllm_dtype bfloat16 \
       --prime_opd_teacher_vllm_enforce_eager "${PRIME_OPD_TEACHER_VLLM_ENFORCE_EAGER:-false}" \
       --prime_opd_teacher_vllm_quantization "${PRIME_OPD_TEACHER_VLLM_QUANTIZATION:-none}" \
@@ -814,7 +815,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_ready_timeout "${PRIME_OPD_TEACHER_READY_TIMEOUT:-7200}" \
       --prime_opd_teacher_vllm_tensor_parallel_size "${TEACHER_TP}" \
       --prime_opd_teacher_vllm_data_parallel_size "${TEACHER_DP}" \
-      --prime_opd_teacher_vllm_max_model_len "${VLLM_CTX_LEN}" \
+      --prime_opd_teacher_vllm_max_model_len "${TEACHER_VLLM_CTX_LEN}" \
       --prime_opd_teacher_vllm_dtype bfloat16 \
       --prime_opd_teacher_vllm_enforce_eager "${PRIME_OPD_TEACHER_VLLM_ENFORCE_EAGER:-false}" \
       --prime_opd_teacher_vllm_quantization "${PRIME_OPD_TEACHER_VLLM_QUANTIZATION:-none}" \

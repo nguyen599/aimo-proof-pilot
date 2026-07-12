@@ -81,8 +81,12 @@ def test_one_node_production_command_uses_requested_long_context_shape() -> None
     assert 'PRIME_TRAIN_GPUS:-4' in text
     assert 'MAX_TRAIN_STEPS:-1000' in text
     assert 'PRIME_OPD_CTX_LEN:-81920' in text
+    assert 'PRIME_OPD_VLLM_MAX_MODEL_LEN:-90112' in text
+    assert 'PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN:-65536' in text
+    assert 'PRIME_OPD_COMPLETION_TOKENS:-75000' in text
     assert 'PRIME_GROUP_SIZE:-8' in text
     assert 'PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4' in text
     assert 'PRIME_PACKED_SEQUENCES_PER_STEP:-64' in text
+    assert 'PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION:-0.96' in text
     assert 'PRIME_CHECKPOINT_INTERVAL:-100' in text
     assert 'WANDB_MODE=online' in text
