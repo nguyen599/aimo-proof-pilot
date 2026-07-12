@@ -965,7 +965,12 @@ def wait_for_external_http_ready(
     raise TimeoutError(f"Timed out waiting for {label}: {url}; last_error={last_error}")
 
 
-def start_teacher_inference(args: argparse.Namespace, log_dir: Path) -> subprocess.Popen | None:
+def start_teacher_inference(
+    args: argparse.Namespace,
+    log_dir: Path,
+    *,
+    wait_until_ready: bool = True,
+) -> subprocess.Popen | None:
     if args.prime_algorithm != "opd" or not args.prime_opd_start_teacher:
         return None
     if args.dry_run_prime_rl:
@@ -994,8 +999,14 @@ def start_teacher_inference(args: argparse.Namespace, log_dir: Path) -> subproce
     process = subprocess.Popen(command, env=env, stdout=log_file, stderr=log_file)
     log_file.close()
     ready_url = f"http://localhost:{args.prime_opd_teacher_port}/v1/models"
-    wait_for_http_ready(ready_url, process, teacher_log_path, args.prime_opd_teacher_ready_timeout)
-    log(f"OPD teacher inference ready: {ready_url}")
+    if wait_until_ready:
+        wait_for_http_ready(ready_url, process, teacher_log_path, args.prime_opd_teacher_ready_timeout)
+        log(f"OPD teacher inference ready: {ready_url}")
+    else:
+        log(
+            "OPD teacher inference launched asynchronously; policy startup and rollout generation "
+            f"will overlap teacher readiness at {ready_url}"
+        )
     return process
 
 
@@ -1462,7 +1473,11 @@ def main(argv: list[str] | None = None) -> int:
     start = time.monotonic()
     teacher_process: subprocess.Popen | None = None
     try:
-        teacher_process = start_teacher_inference(args, log_dir)
+        teacher_process = start_teacher_inference(
+            args,
+            log_dir,
+            wait_until_ready=args.prime_component != "full",
+        )
         return_code = run_logged_subprocess(command, os.environ.copy(), log_path=log_dir / "prime_rl_subprocess.log")
         log(f"Prime-RL exit status: {return_code} duration_s={time.monotonic() - start:.1f}")
         return return_code
