@@ -97,3 +97,63 @@ def test_one_node_production_command_uses_requested_long_context_shape() -> None
     assert 'PRIME_OPD_TEACHER_GPU_MEMORY_UTILIZATION:-0.96' in text
     assert 'PRIME_CHECKPOINT_INTERVAL:-100' in text
     assert 'WANDB_MODE=online' in text
+
+
+def test_two_trainer_node_layout_assigns_distributed_ranks(tmp_path: Path) -> None:
+    rendezvous = tmp_path / "rendezvous"
+    rendezvous.mkdir()
+    for node in range(8):
+        (rendezvous / f"node{node}.ip").write_text(f"10.0.0.{node + 1}\n", encoding="utf-8")
+        (rendezvous / f"node{node}.host").write_text(f"node{node}\n", encoding="utf-8")
+
+    base_env = os.environ.copy()
+    for name in ("NODE_RANK", "SLURM_NODEID", "RANK", "LOCAL_RANK", "WORLD_SIZE"):
+        base_env.pop(name, None)
+    base_env.update(
+        {
+            "PRIME_NODE_LAYOUT": "8node",
+            "PRIME_TRAIN_NODES": "0,1",
+            "PRIME_POLICY_NODES": "2,3,4,5,6",
+            "PRIME_TEACHER_NODE": "7",
+            "PRIME_COMMAND_PREVIEW": "1",
+            "PRIME_3NODE_CLEAN_ROLE_PROCS": "0",
+            "PRIME_3NODE_TMP_ROOT": str(tmp_path / "runtime"),
+            "PRIME_3NODE_RENDEZVOUS_DIR": str(rendezvous),
+            "PRIME_TRAIN_PYTHON": os.sys.executable,
+            "PRIME_TRAIN_ENTRYPOINT": str(REPO_ROOT / "src" / "train.py"),
+            "OLMO_RUN_DIR_NAME": "two_trainer_layout_test",
+        }
+    )
+
+    outputs: list[str] = []
+    base_env["PRIME_GPU_NAMES_OVERRIDE"] = "NVIDIA B200"
+    base_env["PRIME_GPU_COMPUTE_CAPS_OVERRIDE"] = "10.0"
+    for node in (0, 1, 7):
+        env = dict(base_env)
+        env["GLOBAL_RANK"] = str(node)
+        env["PRIME_3NODE_ROLE_LOCK"] = str(tmp_path / f"role-{node}.lock")
+        result = subprocess.run(
+            ["bash", str(COMMAND)],
+            cwd=REPO_ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        outputs.append(result.stdout)
+
+    head_output, worker_output, teacher_output = outputs
+    assert "node=0 role=trainer_orchestrator" in head_output
+    assert "--prime_component trainer_orchestrator" in head_output
+    assert "--prime_trainer_num_nodes 2" in head_output
+    assert "--prime_trainer_node_rank 0" in head_output
+    assert "--prime_policy_dp_rank_count 8" in head_output
+    assert "node=1 role=trainer_worker" in worker_output
+    assert "--prime_component trainer_worker" in worker_output
+    assert "--prime_trainer_num_nodes 2" in worker_output
+    assert "--prime_trainer_node_rank 1" in worker_output
+    assert "node=7 role=teacher_inference" in teacher_output
+    assert 'moe_backend' in teacher_output
+    assert 'deep_gemm_mega_moe' in teacher_output
+    assert 'use_fp4_indexer_cache' in teacher_output
+    assert 'linear_backend' not in teacher_output

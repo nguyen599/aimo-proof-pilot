@@ -87,9 +87,39 @@ fi
 export GLOBAL_RANK="${REPLICA_RANK}"
 export OLMO_RUN_DIR_NAME="${RUN_NAME}"
 export PRIME_NODE_LAYOUT=8node
-export PRIME_TRAIN_NODE=0
-export PRIME_POLICY_NODES=1,2,3,4,5,6
-export PRIME_TEACHER_NODE=7
+
+ROLE_LAYOUT="${OPD_ROLE_LAYOUT:-1|6|1}"
+IFS='|' read -r TRAIN_NODE_COUNT POLICY_NODE_COUNT TEACHER_NODE_COUNT ROLE_LAYOUT_EXTRA <<< "${ROLE_LAYOUT}"
+if [[ -n "${ROLE_LAYOUT_EXTRA:-}" ]] \
+    || ! "${TRAIN_NODE_COUNT:-}" =~ ^[1-9][0-9]*$ \
+    || ! "${POLICY_NODE_COUNT:-}" =~ ^[1-9][0-9]*$ \
+    || ! "${TEACHER_NODE_COUNT:-}" =~ ^[1-9][0-9]*$; then
+  echo "[beaker-opd] OPD_ROLE_LAYOUT must be TRAIN|POLICY|TEACHER positive counts; got ${ROLE_LAYOUT}" >&2
+  exit 2
+fi
+if (( TRAIN_NODE_COUNT + POLICY_NODE_COUNT + TEACHER_NODE_COUNT != REPLICA_COUNT )); then
+  echo "[beaker-opd] role counts ${ROLE_LAYOUT} do not sum to ${REPLICA_COUNT} replicas" >&2
+  exit 2
+fi
+if (( TEACHER_NODE_COUNT != 1 )); then
+  echo "[beaker-opd] this launcher currently requires exactly one teacher node; got ${TEACHER_NODE_COUNT}" >&2
+  exit 2
+fi
+
+csv_range() {
+  local start=$1
+  local count=$2
+  local result=""
+  local index
+  for ((index = start; index < start + count; index++)); do
+    result="${result:+${result},}${index}"
+  done
+  printf '%s\n' "${result}"
+}
+
+export PRIME_TRAIN_NODES="$(csv_range 0 "${TRAIN_NODE_COUNT}")"
+export PRIME_POLICY_NODES="$(csv_range "${TRAIN_NODE_COUNT}" "${POLICY_NODE_COUNT}")"
+export PRIME_TEACHER_NODE="$((TRAIN_NODE_COUNT + POLICY_NODE_COUNT))"
 
 export PRIME_TRAIN_PYTHON="${PRIME_TRAIN_PYTHON:-$(command -v python)}"
 export PRIME_TRAIN_ENTRYPOINT="${PRIME_TRAIN_ENTRYPOINT:-/app/train.py}"
@@ -124,7 +154,7 @@ export PRIME_PROOF_CANDIDATE_GATE=false
 export PRIME_PROOF_ENABLE_META_VERIFICATION=false
 export PRIME_PROOF_NUM_VERIFIERS=1
 export PRIME_PROOF_REFINE_ROUNDS=0
-export PRIME_OPD_MAX_INFLIGHT_ROLLOUTS="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-288}"
+export PRIME_OPD_MAX_INFLIGHT_ROLLOUTS="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-$((48 * POLICY_NODE_COUNT))}"
 export PRIME_OPD_MAX_INFLIGHT_QUESTIONS=0
 export PRIME_MAX_OFF_POLICY_STEPS="${PRIME_MAX_OFF_POLICY_STEPS:-24}"
 
@@ -162,6 +192,7 @@ export PRIME_OPD_TEACHER_HIDDEN_BACKEND=hook
 export PRIME_RESOURCE_MONITOR_INTERVAL_SECONDS="${PRIME_RESOURCE_MONITOR_INTERVAL_SECONDS:-60}"
 export WANDB_MODE=online
 export WANDB_PROJECT="${WANDB_PROJECT:-olmo3-prime-rl-full-vocab}"
+export WANDB_SHARED_RUN_ID="${WANDB_SHARED_RUN_ID:-$(printf '%s' "${RUN_NAME}" | sha256sum | cut -c1-32)}"
 export HF_XET_HIGH_PERFORMANCE=1
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
@@ -172,6 +203,6 @@ export NCCL_DEBUG="${NCCL_DEBUG:-INFO}"
 
 echo "[beaker-opd] run=${RUN_NAME} replica=${REPLICA_RANK}/${REPLICA_COUNT} host=$(hostname)"
 echo "[beaker-opd] gpu_names=${GPU_NAMES} compute_caps=${GPU_CAPS} shared_root=${SHARED_ROOT}"
-echo "[beaker-opd] topology trainer=0 policy=1-6 teacher=7; B200/B300 trainer attention must resolve to olmo3_sink_fa2"
+echo "[beaker-opd] topology layout=${ROLE_LAYOUT} trainer=${PRIME_TRAIN_NODES} policy=${PRIME_POLICY_NODES} teacher=${PRIME_TEACHER_NODE}; B200/B300 trainer attention must resolve to olmo3_sink_fa2"
 
 exec bash /opt/aimo-proof-pilot-beaker/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh

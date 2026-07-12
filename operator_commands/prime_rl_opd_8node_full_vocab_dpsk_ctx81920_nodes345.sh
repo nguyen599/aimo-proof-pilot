@@ -17,8 +17,9 @@ set -euo pipefail
 #   1node: node 0 runs trainer, policy, teacher, and orchestrator locally.
 #   6node: node 0 trainer, nodes 1,2,3,4 policy, node 5 teacher.
 #   3node: node 0 trainer, node 1 policy, node 2 teacher.
-# The explicit PRIME_TRAIN_NODE, PRIME_POLICY_NODES, and PRIME_TEACHER_NODE
-# variables override both layouts.
+# The explicit PRIME_TRAIN_NODES, PRIME_POLICY_NODES, and PRIME_TEACHER_NODE
+# variables override both layouts. PRIME_TRAIN_NODE remains a backward-
+# compatible alias for a single trainer node.
 
 NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
 NODE_LAYOUT="${PRIME_NODE_LAYOUT:-8node}"
@@ -80,7 +81,7 @@ if (( SINGLE_NODE_MODE == 1 )) && [[ "${NODE_LABEL}" == "none" ]]; then
   NODE_LABEL="${DEFAULT_TRAIN_NODE}"
 fi
 
-TRAIN_NODE="${PRIME_TRAIN_NODE:-${DEFAULT_TRAIN_NODE}}"
+TRAIN_NODES="${PRIME_TRAIN_NODES:-${PRIME_TRAIN_NODE:-${DEFAULT_TRAIN_NODE}}}"
 POLICY_NODES="${PRIME_POLICY_NODES:-${DEFAULT_POLICY_NODES}}"
 TEACHER_NODE="${PRIME_TEACHER_NODE:-${DEFAULT_TEACHER_NODE}}"
 
@@ -112,15 +113,69 @@ csv_contains() {
   return 1
 }
 
+csv_first() {
+  local csv=$1
+  local part
+  IFS=',' read -ra parts <<< "${csv}"
+  for part in "${parts[@]}"; do
+    part="${part//[[:space:]]/}"
+    if [[ -n "${part}" ]]; then
+      printf '%s\n' "${part}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+csv_index() {
+  local csv=$1
+  local needle=$2
+  local part
+  local index=0
+  IFS=',' read -ra parts <<< "${csv}"
+  for part in "${parts[@]}"; do
+    part="${part//[[:space:]]/}"
+    [[ -n "${part}" ]] || continue
+    if [[ "${part}" == "${needle}" ]]; then
+      printf '%s\n' "${index}"
+      return 0
+    fi
+    index=$((index + 1))
+  done
+  return 1
+}
+
+TRAIN_NODE_COUNT="$(csv_count "${TRAIN_NODES}")"
 POLICY_NODE_COUNT="$(csv_count "${POLICY_NODES}")"
+if (( TRAIN_NODE_COUNT < 1 )); then
+  echo "[prime-opd] PRIME_TRAIN_NODES must contain at least one node" >&2
+  exit 1
+fi
 if (( POLICY_NODE_COUNT < 1 )); then
   echo "[prime-opd] PRIME_POLICY_NODES must contain at least one node" >&2
   exit 1
 fi
+TRAIN_NODE="$(csv_first "${TRAIN_NODES}")"
+
+if (( SINGLE_NODE_MODE == 0 )); then
+  if csv_contains "${TRAIN_NODES}" "${TEACHER_NODE}" || csv_contains "${POLICY_NODES}" "${TEACHER_NODE}"; then
+    echo "[prime-opd] teacher node ${TEACHER_NODE} overlaps train=${TRAIN_NODES} or policy=${POLICY_NODES}" >&2
+    exit 1
+  fi
+  IFS=',' read -ra TRAIN_NODE_PARTS <<< "${TRAIN_NODES}"
+  for train_node_part in "${TRAIN_NODE_PARTS[@]}"; do
+    train_node_part="${train_node_part//[[:space:]]/}"
+    [[ -n "${train_node_part}" ]] || continue
+    if csv_contains "${POLICY_NODES}" "${train_node_part}"; then
+      echo "[prime-opd] trainer node ${train_node_part} also appears in policy nodes ${POLICY_NODES}" >&2
+      exit 1
+    fi
+  done
+fi
 
 if (( SINGLE_NODE_MODE == 1 )); then
-  if [[ "${TRAIN_NODE}" != "${TEACHER_NODE}" || "${POLICY_NODES}" != "${TRAIN_NODE}" ]]; then
-    echo "[prime-opd] 1node layout requires train, policy, and teacher to use the same node; got train=${TRAIN_NODE} policy=${POLICY_NODES} teacher=${TEACHER_NODE}" >&2
+  if (( TRAIN_NODE_COUNT != 1 )) || [[ "${TRAIN_NODE}" != "${TEACHER_NODE}" || "${POLICY_NODES}" != "${TRAIN_NODE}" ]]; then
+    echo "[prime-opd] 1node layout requires train, policy, and teacher to use the same node; got train=${TRAIN_NODES} policy=${POLICY_NODES} teacher=${TEACHER_NODE}" >&2
     exit 1
   fi
   if [[ "${NODE_LABEL}" != "${TRAIN_NODE}" ]]; then
@@ -130,12 +185,14 @@ if (( SINGLE_NODE_MODE == 1 )); then
   PRIME_COMPONENT_ROLE="full"
 elif [[ "${NODE_LABEL}" == "${TRAIN_NODE}" ]]; then
   PRIME_COMPONENT_ROLE="trainer_orchestrator"
+elif csv_contains "${TRAIN_NODES}" "${NODE_LABEL}"; then
+  PRIME_COMPONENT_ROLE="trainer_worker"
 elif [[ "${NODE_LABEL}" == "${TEACHER_NODE}" ]]; then
   PRIME_COMPONENT_ROLE="teacher_inference"
 elif csv_contains "${POLICY_NODES}" "${NODE_LABEL}"; then
   PRIME_COMPONENT_ROLE="policy_inference"
 else
-  echo "[prime-opd] node=${NODE_LABEL} host=$(hostname) not in train=${TRAIN_NODE} policy=${POLICY_NODES} teacher=${TEACHER_NODE}; skipping."
+  echo "[prime-opd] node=${NODE_LABEL} host=$(hostname) not in train=${TRAIN_NODES} policy=${POLICY_NODES} teacher=${TEACHER_NODE}; skipping."
   exit 0
 fi
 
@@ -282,8 +339,13 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 TEACHER_TP="${PRIME_OPD_TEACHER_TP:-${DEFAULT_TEACHER_TP}}"
 TEACHER_DP="${PRIME_OPD_TEACHER_DP:-${DEFAULT_TEACHER_DP}}"
 TEACHER_GPU_IDS="${PRIME_OPD_TEACHER_GPU_IDS:-${DEFAULT_TEACHER_GPU_IDS}}"
+TEACHER_IS_BLACKWELL=0
+if grep -Eiq '(^|[^[:alnum:]])(GB)?B(200|300)([^[:alnum:]]|$)|Blackwell' <<< "${GPU_NAMES_ONE_LINE}"; then
+  TEACHER_IS_BLACKWELL=1
+fi
 TEACHER_VLLM_EXTRA_DEFAULT="$(
   TEACHER_TP="${TEACHER_TP}" \
+  TEACHER_IS_BLACKWELL="${TEACHER_IS_BLACKWELL}" \
   TEACHER_KV_CACHE_MEMORY_BYTES="${PRIME_OPD_TEACHER_KV_CACHE_MEMORY_BYTES:-0}" \
   TEACHER_CPU_OFFLOAD_GB="${PRIME_OPD_TEACHER_CPU_OFFLOAD_GB:-0}" \
   python - <<'PY'
@@ -291,13 +353,13 @@ import json
 import os
 
 tp = int(os.environ["TEACHER_TP"])
+is_blackwell = os.environ.get("TEACHER_IS_BLACKWELL") == "1"
 kv_cache_memory_bytes = int(os.environ.get("TEACHER_KV_CACHE_MEMORY_BYTES", "0") or "0")
 cpu_offload_gb = float(os.environ.get("TEACHER_CPU_OFFLOAD_GB", "0") or "0")
 extra = {
     "kv_cache_dtype": "fp8",
     "block_size": 256,
     "enable_expert_parallel": True,
-    "linear_backend": "deep_gemm",
     "compilation_config": {
         "pass_config": {
             "fuse_allreduce_rms": False,
@@ -306,6 +368,11 @@ extra = {
     },
     "additional_config": {},
 }
+if is_blackwell:
+    extra["attention_config"] = {"use_fp4_indexer_cache": True}
+    extra["moe_backend"] = "deep_gemm_mega_moe"
+else:
+    extra["linear_backend"] = "deep_gemm"
 if kv_cache_memory_bytes > 0:
     extra["kv_cache_memory_bytes"] = kv_cache_memory_bytes
 if cpu_offload_gb > 0:
@@ -355,16 +422,15 @@ case "${TEACHER_HIDDEN_BACKEND}" in
     TEACHER_EXTRACTOR_LAYER_ID="${PRIME_OPD_TEACHER_EXTRACTOR_LAYER_ID:-42}"
     mkdir -p "${TEACHER_HIDDEN_STORAGE}"
     TEACHER_VLLM_EXTRA_DEFAULT="$(
-      TEACHER_HIDDEN_STORAGE="${TEACHER_HIDDEN_STORAGE}" TEACHER_EXTRACTOR_LAYER_ID="${TEACHER_EXTRACTOR_LAYER_ID}" python - <<'PY'
+      TEACHER_HIDDEN_STORAGE="${TEACHER_HIDDEN_STORAGE}" TEACHER_EXTRACTOR_LAYER_ID="${TEACHER_EXTRACTOR_LAYER_ID}" TEACHER_IS_BLACKWELL="${TEACHER_IS_BLACKWELL}" python - <<'PY'
 import json
 import os
 
 layer_id = int(os.environ["TEACHER_EXTRACTOR_LAYER_ID"])
-print(json.dumps({
+extra = {
     "kv_cache_dtype": "fp8",
     "block_size": 256,
     "enable_expert_parallel": True,
-    "linear_backend": "deep_gemm",
     "disable_custom_all_reduce": True,
     "compilation_config": {
         "pass_config": {
@@ -390,7 +456,13 @@ print(json.dumps({
             "shared_storage_path": os.environ["TEACHER_HIDDEN_STORAGE"],
         },
     },
-}))
+}
+if os.environ.get("TEACHER_IS_BLACKWELL") == "1":
+    extra["attention_config"] = {"use_fp4_indexer_cache": True}
+    extra["moe_backend"] = "deep_gemm_mega_moe"
+else:
+    extra["linear_backend"] = "deep_gemm"
+print(json.dumps(extra))
 PY
     )"
     echo "[prime-opd-3node] using vLLM extractor hidden-state layer id ${TEACHER_EXTRACTOR_LAYER_ID}"
@@ -447,7 +519,7 @@ wait_for_http() {
 
 POLICY_PORT="${PRIME_POLICY_PORT:-8000}"
 TEACHER_PORT="${PRIME_OPD_TEACHER_PORT:-8001}"
-REQUIRED_NODES_CSV="${TRAIN_NODE},${POLICY_NODES},${TEACHER_NODE}"
+REQUIRED_NODES_CSV="${TRAIN_NODES},${POLICY_NODES},${TEACHER_NODE}"
 IFS=',' read -ra REQUIRED_NODE_PARTS <<< "${REQUIRED_NODES_CSV}"
 for rank in "${REQUIRED_NODE_PARTS[@]}"; do
   rank="${rank//[[:space:]]/}"
@@ -470,7 +542,9 @@ for policy_node in "${POLICY_NODE_PARTS[@]}"; do
 done
 TEACHER_BASE_URL="http://${TEACHER_IP}:${TEACHER_PORT}/v1"
 
-echo "[prime-opd-3node] layout train=${TRAIN_NODE} policy=${POLICY_NODES} teacher=${TEACHER_NODE} policy_node_count=${POLICY_NODE_COUNT}"
+TRAINER_NODE_RANK="$(csv_index "${TRAIN_NODES}" "${NODE_LABEL}" 2>/dev/null || printf '%s' '-1')"
+TRAINER_MASTER_PORT="${PRIME_TRAINER_MASTER_PORT:-29400}"
+echo "[prime-opd-3node] layout train=${TRAIN_NODES} policy=${POLICY_NODES} teacher=${TEACHER_NODE} train_node_count=${TRAIN_NODE_COUNT} policy_node_count=${POLICY_NODE_COUNT}"
 echo "[prime-opd-3node] train_ip=${TRAIN_IP}"
 echo "[prime-opd-3node] policy_base_url=${POLICY_BASE_URL}"
 echo "[prime-opd-3node] teacher_base_url=${TEACHER_BASE_URL}"
@@ -730,6 +804,10 @@ COMMON_ARGS=(
   --rollout_max_completion_tokens "${COMPLETION_TOKENS}"
   --optimizer "${PRIME_OPTIMIZER:-te_fused_adamw}"
   --learning_rate "${PRIME_LEARNING_RATE:-1e-7}"
+  --prime_lr_scheduler "${PRIME_LR_SCHEDULER:-constant}"
+  --prime_lr_warmup_steps "${PRIME_LR_WARMUP_STEPS:-10}"
+  --prime_lr_decay_steps "${PRIME_LR_DECAY_STEPS:-10}"
+  --prime_lr_min "${PRIME_LR_MIN:-0.0}"
   --weight_decay "${PRIME_WEIGHT_DECAY:-0.0}"
   --max_grad_norm "${PRIME_MAX_GRAD_NORM:-1.0}"
   --prime_algorithm opd
@@ -874,7 +952,9 @@ case "${PRIME_COMPONENT_ROLE}" in
 
   trainer_orchestrator)
     echo "[prime-opd-3node] starting trainer; train_engine_rl will wait for policy and teacher endpoints"
-    export OLMO_RUN_DIR_NAME="${RUN_NAME}_trainer_node${NODE_LABEL}"
+    export OLMO_RUN_DIR_NAME="${RUN_NAME}_trainer"
+    export OLMO_OUTPUT_RUN_DIR_NAME="${RUN_NAME}_trainer"
+    export OLMO_LOG_RUN_DIR_NAME="${RUN_NAME}_trainer_node${NODE_LABEL}"
     launch_train "${TRAIN_PY_ENV[@]}" "${TRAIN_PYTHON}" "${TRAIN_ENTRYPOINT}" "${COMMON_ARGS[@]}" \
       --prime_component trainer_orchestrator \
       --prime_train_gpus "${TRAIN_GPU_COUNT}" \
@@ -889,7 +969,33 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_start_teacher false \
       --prime_opd_teacher_base_url "${TEACHER_BASE_URL}" \
       --prime_opd_teacher_vllm_tensor_parallel_size "${TEACHER_TP}" \
-      --prime_opd_teacher_vllm_data_parallel_size "${TEACHER_DP}"
+      --prime_opd_teacher_vllm_data_parallel_size "${TEACHER_DP}" \
+      --prime_trainer_num_nodes "${TRAIN_NODE_COUNT}" \
+      --prime_trainer_node_rank "${TRAINER_NODE_RANK}" \
+      --prime_trainer_master_addr "${TRAIN_IP}" \
+      --prime_trainer_master_port "${TRAINER_MASTER_PORT}" \
+      --prime_trainer_rdzv_id "${RUN_NAME}" \
+      --prime_trainer_rdzv_timeout "${PRIME_TRAINER_RDZV_TIMEOUT:-7200}"
+    ;;
+
+  trainer_worker)
+    echo "[prime-opd] starting distributed trainer worker rank ${TRAINER_NODE_RANK}/${TRAIN_NODE_COUNT}"
+    export OLMO_RUN_DIR_NAME="${RUN_NAME}_trainer"
+    export OLMO_OUTPUT_RUN_DIR_NAME="${RUN_NAME}_trainer"
+    export OLMO_LOG_RUN_DIR_NAME="${RUN_NAME}_trainer_node${NODE_LABEL}"
+    launch_train "${TRAIN_PY_ENV[@]}" "${TRAIN_PYTHON}" "${TRAIN_ENTRYPOINT}" "${COMMON_ARGS[@]}" \
+      --prime_component trainer_worker \
+      --prime_train_gpus "${TRAIN_GPU_COUNT}" \
+      --prime_infer_gpus 0 \
+      --prime_opd_teacher_model "${TEACHER_MODEL_PATH}" \
+      --prime_opd_teacher_tokenizer_path "${MODEL_PATH}" \
+      --prime_opd_start_teacher false \
+      --prime_trainer_num_nodes "${TRAIN_NODE_COUNT}" \
+      --prime_trainer_node_rank "${TRAINER_NODE_RANK}" \
+      --prime_trainer_master_addr "${TRAIN_IP}" \
+      --prime_trainer_master_port "${TRAINER_MASTER_PORT}" \
+      --prime_trainer_rdzv_id "${RUN_NAME}" \
+      --prime_trainer_rdzv_timeout "${PRIME_TRAINER_RDZV_TIMEOUT:-7200}"
     ;;
 
   full)

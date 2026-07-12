@@ -33,6 +33,8 @@ tasks:
     value: /weka/aimo-proof-pilot
   - name: OPD_AUTO_DOWNLOAD_ASSETS
     value: "1"
+  - name: OPD_ROLE_LAYOUT
+    value: "2|5|1"
   - name: OPD_STUDENT_HF_REPO
     value: chankhavu/yccchen-olmo3-deploy
   - name: OPD_TEACHER_HF_REPO
@@ -42,21 +44,25 @@ tasks:
   - name: OPD_DATASET_HF_FILENAME
     value: data/per_turn.parquet
   - name: MAX_TRAIN_STEPS
-    value: "1000"
+    value: "2000"
   - name: PRIME_OPD_CTX_LEN
-    value: "81920"
+    value: "131072"
   - name: PRIME_OPD_VLLM_MAX_MODEL_LEN
-    value: "90112"
+    value: "133120"
   - name: PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN
-    value: "90112"
+    value: "133120"
   - name: PRIME_OPD_COMPLETION_TOKENS
-    value: "65000"
+    value: "128000"
   - name: PRIME_GROUP_SIZE
     value: "1"
   - name: PRIME_PACKED_SEQUENCES_PER_STEP
     value: "64"
-  - name: PRIME_OPD_MAX_INFLIGHT_ROLLOUTS
-    value: "288"
+  - name: PRIME_LR_SCHEDULER
+    value: cosine
+  - name: PRIME_LR_WARMUP_STEPS
+    value: "10"
+  - name: PRIME_LR_MIN
+    value: "0.0"
   - name: PRIME_CHECKPOINT_INTERVAL
     value: "100"
   - name: PRIME_OPD_EVAL_INTERVAL
@@ -64,7 +70,7 @@ tasks:
   - name: PRIME_TRAINER_FP8
     value: "true"
   - name: PRIME_TRAINER_COMPILE
-    value: "false"
+    value: "true"
   - name: HF_TOKEN
     secret: HF_TOKEN
   - name: WANDB_API_KEY

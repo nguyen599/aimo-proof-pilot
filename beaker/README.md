@@ -1,18 +1,19 @@
 # Prime-RL OPD on AI2 Beaker B200
 
 This folder packages the current OLMo3Sink 32B full-vocabulary OPD pipeline for
-eight AI2 Titan nodes (64 B200 GPUs total). It is a role-separated deployment:
-This is the same role layout used by the current eight-node NII launcher.
+eight AI2 Titan nodes (64 B200 GPUs total). It is a role-separated deployment.
+The default Beaker layout is configured by `OPD_ROLE_LAYOUT=2|5|1`:
 
 | Beaker replica | Role | GPUs |
 |---|---|---:|
-| 0 | Prime-RL trainer and orchestrator | 8 |
-| 1-6 | Student policy rollout, TP=1 and DP=8 per node | 48 total |
+| 0 | Prime-RL trainer rank 0 and orchestrator | 8 |
+| 1 | Prime-RL trainer rank 1 | 8 |
+| 2-6 | Student policy rollout, TP=1 and DP=8 per node | 40 total |
 | 7 | DeepSeek-V4-Flash teacher hidden-state scorer, TP=8 | 8 |
 
 The nodes exchange control data over host networking and large artifacts over a
-shared WEKA mount. This topology does not run one 64-GPU trainer: the trainer,
-policy, and teacher each remain node-local, while Prime-RL coordinates them.
+shared WEKA mount. The trainer is one 16-GPU `torchrun` job across replicas 0
+and 1; policy and teacher remain separate services.
 
 ## Files
 
@@ -27,19 +28,26 @@ policy, and teacher each remain node-local, while Prime-RL coordinates them.
 
 ## Default training configuration
 
-- Context: 81,920 trainer tokens.
-- Policy completion limit: 65,000 tokens; vLLM model length 90,112.
+- Context: 131,072 trainer tokens.
+- Policy completion limit: 128,000 tokens; vLLM model length 133,120.
 - Dataset mode: `single`, using pre-rendered `prove`, `verify`, `refine`, and
   `select` prompts from `per_turn.parquet`.
-- Optimizer batch: 64 packed sequences, approximately 5.24M padded tokens.
+- Optimizer batch: 64 packed sequences, approximately 8.39M padded tokens.
 - Distillation: teacher hidden states, BF16 capture, `had_int6_blk32` transport,
   reconstructed full-vocabulary logits, reverse KL.
-- Policy capacity: 288 in-flight rollouts, matching 48 per policy node.
+- Policy capacity: 240 in-flight rollouts by default, calculated as 48 per
+  policy node when no explicit override is set.
+- Learning-rate schedule: cosine with 10 warmup steps and minimum LR 0.
+- Trainer compilation: enabled by the production YAML; set
+  `PRIME_TRAINER_COMPILE=false` for the conservative first-start path.
 - Checkpoints: every 100 optimizer steps, keep the last two.
 - W&B: online.
 - Trainer attention: automatically forced to `olmo3_sink_fa2` on B200/B300.
   Magi FA4 is not used because OLMo3 contains sliding-attention layers and the
   FA4 sink interface does not expose a sliding window.
+- B200/B300 teacher inference uses the FP4 DSA indexer cache and
+  `deep_gemm_mega_moe`; the Hopper-only `linear_backend=deep_gemm` setting is
+  omitted on Blackwell.
 
 ## 1. Beaker prerequisites
 
@@ -167,6 +175,8 @@ tasks:
     value: /weka/aimo-proof-pilot
   - name: OPD_AUTO_DOWNLOAD_ASSETS
     value: "1"
+  - name: OPD_ROLE_LAYOUT
+    value: "2|5|1"
   - name: OPD_STUDENT_HF_REPO
     value: chankhavu/yccchen-olmo3-deploy
   - name: OPD_TEACHER_HF_REPO
@@ -176,21 +186,25 @@ tasks:
   - name: OPD_DATASET_HF_FILENAME
     value: data/per_turn.parquet
   - name: MAX_TRAIN_STEPS
-    value: "1000"
+    value: "2000"
   - name: PRIME_OPD_CTX_LEN
-    value: "81920"
+    value: "131072"
   - name: PRIME_OPD_VLLM_MAX_MODEL_LEN
-    value: "90112"
+    value: "133120"
   - name: PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN
-    value: "90112"
+    value: "133120"
   - name: PRIME_OPD_COMPLETION_TOKENS
-    value: "65000"
+    value: "128000"
   - name: PRIME_GROUP_SIZE
     value: "1"
   - name: PRIME_PACKED_SEQUENCES_PER_STEP
     value: "64"
-  - name: PRIME_OPD_MAX_INFLIGHT_ROLLOUTS
-    value: "288"
+  - name: PRIME_LR_SCHEDULER
+    value: cosine
+  - name: PRIME_LR_WARMUP_STEPS
+    value: "10"
+  - name: PRIME_LR_MIN
+    value: "0.0"
   - name: PRIME_CHECKPOINT_INTERVAL
     value: "100"
   - name: PRIME_OPD_EVAL_INTERVAL
@@ -198,7 +212,7 @@ tasks:
   - name: PRIME_TRAINER_FP8
     value: "true"
   - name: PRIME_TRAINER_COMPILE
-    value: "false"
+    value: "true"
   - name: HF_TOKEN
     secret: HF_TOKEN
   - name: WANDB_API_KEY
@@ -230,13 +244,17 @@ and checkpoint cadence without rebuilding the image:
   - { name: PRIME_OPD_COMPLETION_TOKENS, value: "32768" }
   - { name: PRIME_PACKED_SEQUENCES_PER_STEP, value: "32" }
   - { name: PRIME_CHECKPOINT_INTERVAL, value: "50" }
+  - { name: OPD_ROLE_LAYOUT, value: "1|6|1" }
+  - { name: PRIME_LR_SCHEDULER, value: "constant" }
 ```
 
 Use string values for numbers and booleans in Beaker YAML. Any variable from
 `beaker/entrypoint.sh` or
 `operator_commands/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh`
-can be added the same way. Values that the entrypoint intentionally fixes for
-this topology, such as the eight-node role assignment, are not override knobs.
+can be added the same way. `OPD_ROLE_LAYOUT` is `TRAIN|POLICY|TEACHER`; all
+counts must be positive, sum to the Beaker replica count, and currently require
+one teacher node. For example, `2|5|1` uses two distributed trainer nodes while
+`1|6|1` preserves the previous single-trainer layout.
 
 Render the `${...}` placeholders and submit it:
 
@@ -265,18 +283,18 @@ beaker experiment logs EXPERIMENT_ID
 Expected lines include:
 
 ```text
-[beaker-opd] topology trainer=0 policy=1-6 teacher=7
+[beaker-opd] topology layout=2|5|1 trainer=0,1 policy=2,3,4,5,6 teacher=7
 [prime-opd] trainer attention backend=olmo3_sink_fa2 gpu_names=NVIDIA B200...
-[prime-opd-3node] max_inflight_rollouts=288
+[prime-opd-3node] max_inflight_rollouts=240
 ```
 
 Then verify:
 
 1. All replicas report 8 B200 GPUs and the same run name.
 2. Replica 7 exposes the teacher on port 8001.
-3. Replicas 1-6 expose policy APIs on port 8000.
-4. Replica 0 discovers all six policy URLs and the teacher URL.
-5. Trainer logs show `Optimizer step token batch` near 5.24M padded tokens.
+3. Replicas 2-6 expose policy APIs on port 8000.
+4. Replica 0 discovers all five policy URLs and the teacher URL.
+5. Trainer logs show `Optimizer step token batch` near 8.39M padded tokens.
 6. The first backward passes the OLMo3Sink sink-gradient canary.
 7. W&B shows numeric token graphs under keys like
    `train/proof_math/all/metrics/proof_opd_policy_generated_tokens/mean`.

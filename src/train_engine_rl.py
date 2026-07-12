@@ -5,6 +5,7 @@ import argparse
 import json
 import netrc
 import os
+import signal
 import shlex
 import shutil
 import subprocess
@@ -227,7 +228,7 @@ def resolve_runtime_assets(args: argparse.Namespace) -> None:
     component = args.prime_component
 
     student_repo = args.model_hf_repo
-    student_needed = component in {"full", "policy_inference", "trainer_orchestrator"}
+    student_needed = component in {"full", "policy_inference", "trainer_orchestrator", "trainer_worker"}
     if student_needed:
         if args.model_path and model_snapshot_complete(Path(args.model_path).expanduser()):
             args.model_path = str(Path(args.model_path).expanduser().resolve())
@@ -254,7 +255,10 @@ def resolve_runtime_assets(args: argparse.Namespace) -> None:
     teacher_repo = args.prime_opd_teacher_hf_repo
     teacher_needed = args.prime_algorithm == "opd" and (
         component in {"full", "teacher_inference"}
-        or (component == "trainer_orchestrator" and args.prime_opd_distill_mode == "full_vocab_hidden")
+        or (
+            component in {"trainer_orchestrator", "trainer_worker"}
+            and args.prime_opd_distill_mode == "full_vocab_hidden"
+        )
     )
     if args.prime_algorithm == "opd" and teacher_needed:
         if args.prime_opd_teacher_model and model_snapshot_complete(
@@ -356,6 +360,7 @@ def write_prime_rl_config(path: Path, config: dict[str, Any]) -> None:
         write_toml_lines(lines, "wandb", config["wandb"])
     write_toml_lines(lines, "trainer.model", config["trainer_model"])
     write_toml_lines(lines, "trainer.optim", config["trainer_optim"])
+    write_toml_lines(lines, "trainer.scheduler", config["trainer_scheduler"])
     if config.get("trainer_full_vocab_distill"):
         write_toml_lines(lines, "trainer.full_vocab_distill", config["trainer_full_vocab_distill"])
     if config.get("trainer_ckpt"):
@@ -397,6 +402,76 @@ def write_prime_rl_config(path: Path, config: dict[str, Any]) -> None:
         write_toml_lines(lines, "inference", config["inference"])
     if config.get("inference_model") and config.get("vllm_extra"):
         write_toml_lines(lines, "inference.vllm_extra", config["vllm_extra"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_prime_trainer_config(path: Path, config: dict[str, Any]) -> None:
+    lines: list[str] = []
+    write_toml_lines(
+        lines,
+        None,
+        {
+            "output_dir": config["root"]["output_dir"],
+            "max_steps": config["root"]["max_steps"],
+        },
+    )
+    write_toml_lines(lines, "log", config["log"])
+    write_toml_lines(lines, "model", config["trainer_model"])
+    write_toml_lines(lines, "tokenizer", config["tokenizer"])
+    write_toml_lines(lines, "optim", config["trainer_optim"])
+    write_toml_lines(lines, "scheduler", config["trainer_scheduler"])
+    if config.get("trainer_full_vocab_distill"):
+        write_toml_lines(lines, "full_vocab_distill", config["trainer_full_vocab_distill"])
+    if config.get("trainer_ckpt"):
+        write_toml_lines(lines, "ckpt", config["trainer_ckpt"])
+        if config.get("trainer_ckpt_weights"):
+            write_toml_lines(lines, "ckpt.weights", config["trainer_ckpt_weights"])
+    if config.get("weight_broadcast"):
+        write_toml_lines(lines, "weight_broadcast", config["weight_broadcast"])
+    if config.get("wandb"):
+        write_toml_lines(lines, "wandb", config["wandb"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_prime_orchestrator_config(path: Path, config: dict[str, Any]) -> None:
+    lines: list[str] = []
+    orchestrator_root = dict(config["orchestrator"])
+    orchestrator_root["output_dir"] = str(Path(config["root"]["output_dir"]) / "run_default")
+    write_toml_lines(lines, None, orchestrator_root)
+    write_toml_lines(lines, "log", config["log"])
+    write_toml_lines(lines, "tokenizer", config["tokenizer"])
+    if config.get("weight_broadcast"):
+        write_toml_lines(lines, "weight_broadcast", config["weight_broadcast"])
+    if config.get("wandb"):
+        write_toml_lines(lines, "wandb", config["wandb"])
+    if config.get("orchestrator_ckpt"):
+        write_toml_lines(lines, "ckpt", config["orchestrator_ckpt"])
+    if config.get("orchestrator_algo"):
+        write_toml_lines(lines, "algo", config["orchestrator_algo"])
+    if config.get("orchestrator_algo_teacher"):
+        write_toml_lines(lines, "algo.teacher", config["orchestrator_algo_teacher"])
+    write_toml_lines(lines, "model", config["orchestrator_model"])
+    write_toml_lines(lines, "model.client", config["orchestrator_model_client"])
+    write_toml_lines(lines, "train.sampling", config["train_sampling"])
+    for env_config in config["train_envs"]:
+        lines.append("[[train.env]]")
+        for key, value in env_config.items():
+            if value is not None:
+                lines.append(f"{key} = {format_toml_value(value)}")
+        lines.append("")
+    if config.get("eval"):
+        write_toml_lines(lines, "eval", config["eval"])
+        if config.get("eval_sampling"):
+            write_toml_lines(lines, "eval.sampling", config["eval_sampling"])
+        for env_config in config.get("eval_envs", []):
+            lines.append("[[eval.env]]")
+            for key, value in env_config.items():
+                if value is not None:
+                    lines.append(f"{key} = {format_toml_value(value)}")
+            lines.append("")
+    write_toml_lines(lines, "renderer", config["renderer"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
@@ -725,6 +800,17 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             }
         )
 
+    trainer_scheduler: dict[str, Any] = {"type": args.prime_lr_scheduler}
+    if args.prime_lr_scheduler in {"linear", "cosine"}:
+        trainer_scheduler.update(
+            {
+                "warmup_steps": args.prime_lr_warmup_steps,
+                "min_lr": args.prime_lr_min,
+            }
+        )
+    if args.prime_lr_scheduler == "linear":
+        trainer_scheduler["decay_steps"] = args.prime_lr_decay_steps
+
     checkpoint_interval = int(args.prime_checkpoint_interval)
     checkpoint_keep_last = int(args.prime_checkpoint_keep_last)
     checkpoint_keep_interval = int(args.prime_checkpoint_keep_interval)
@@ -818,6 +904,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "compile": None if args.prime_trainer_compile else "None",
         },
         "trainer_optim": trainer_optim,
+        "trainer_scheduler": trainer_scheduler,
         "trainer_full_vocab_distill": trainer_full_vocab_distill,
         "trainer_ckpt": trainer_ckpt,
         "trainer_ckpt_weights": trainer_ckpt_weights,
@@ -1041,6 +1128,149 @@ def stop_process(process: subprocess.Popen | None, name: str) -> None:
         log(f"Killing {name} process pid={process.pid}")
         process.kill()
         process.wait(timeout=30)
+
+
+def start_logged_process(
+    command: list[str],
+    env: dict[str, str],
+    log_path: Path,
+) -> tuple[subprocess.Popen, Any]:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log("Starting command: " + " ".join(shlex.quote(part) for part in command))
+    log(f"Subprocess log: {log_path}")
+    log_file = log_path.open("a", encoding="utf-8")
+    print(
+        f"\n[{datetime.now().isoformat()}] Starting command: "
+        + " ".join(shlex.quote(part) for part in command),
+        file=log_file,
+        flush=True,
+    )
+    process = subprocess.Popen(
+        command,
+        env=env,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    return process, log_file
+
+
+def stop_process_group(process: subprocess.Popen | None, name: str) -> None:
+    if process is None or process.poll() is not None:
+        return
+    log(f"Stopping {name} process group pid={process.pid}")
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        log(f"Killing {name} process group pid={process.pid}")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=30)
+
+
+def build_distributed_trainer_command(args: argparse.Namespace, trainer_config_path: Path) -> list[str]:
+    if args.prime_trainer_num_nodes < 1:
+        raise ValueError("--prime_trainer_num_nodes must be at least 1")
+    if not 0 <= args.prime_trainer_node_rank < args.prime_trainer_num_nodes:
+        raise ValueError(
+            "--prime_trainer_node_rank must be in [0, --prime_trainer_num_nodes); "
+            f"got rank={args.prime_trainer_node_rank} nodes={args.prime_trainer_num_nodes}"
+        )
+    if not args.prime_trainer_master_addr:
+        raise ValueError("--prime_trainer_master_addr is required for multi-node trainer mode")
+    rdzv_id = args.prime_trainer_rdzv_id or os.environ.get("OLMO_RUN_DIR_NAME") or "prime-opd"
+    return [
+        sys.executable,
+        "-m",
+        "torch.distributed.run",
+        "--nnodes",
+        str(args.prime_trainer_num_nodes),
+        "--nproc-per-node",
+        str(args.prime_train_gpus),
+        "--node-rank",
+        str(args.prime_trainer_node_rank),
+        "--rdzv-backend",
+        "c10d",
+        "--rdzv-endpoint",
+        f"{args.prime_trainer_master_addr}:{args.prime_trainer_master_port}",
+        "--rdzv-id",
+        rdzv_id,
+        "--rdzv-conf",
+        f"timeout={args.prime_trainer_rdzv_timeout}",
+        "-m",
+        "prime_rl.trainer.rl.train",
+        "@",
+        str(trainer_config_path),
+    ]
+
+
+def run_distributed_trainer_component(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    log_dir: Path,
+) -> int:
+    trainer_config_path = log_dir / "trainer.toml"
+    write_prime_trainer_config(trainer_config_path, config)
+    trainer_command = build_distributed_trainer_command(args, trainer_config_path)
+    env = os.environ.copy()
+    env.setdefault("WANDB_SHARED_MODE", "1")
+    if args.prime_trainer_node_rank != 0:
+        env["WANDB_SHARED_LABEL"] = "trainer"
+        return run_logged_subprocess(
+            trainer_command,
+            env,
+            log_path=log_dir / f"trainer_node_{args.prime_trainer_node_rank}.log",
+        )
+
+    orchestrator_config_path = log_dir / "orchestrator.toml"
+    write_prime_orchestrator_config(orchestrator_config_path, config)
+    orchestrator_entrypoint = shutil.which("orchestrator")
+    orchestrator_command = (
+        [orchestrator_entrypoint, "@", str(orchestrator_config_path)]
+        if orchestrator_entrypoint
+        else [sys.executable, "-m", "prime_rl.entrypoints.orchestrator", "@", str(orchestrator_config_path)]
+    )
+    trainer_env = dict(env)
+    trainer_env["WANDB_SHARED_LABEL"] = "trainer"
+    orchestrator_env = dict(env)
+    orchestrator_env["WANDB_SHARED_LABEL"] = "orchestrator"
+    trainer_process = orchestrator_process = None
+    trainer_log = orchestrator_log = None
+    try:
+        trainer_process, trainer_log = start_logged_process(
+            trainer_command,
+            trainer_env,
+            log_dir / "trainer_node_0.log",
+        )
+        orchestrator_process, orchestrator_log = start_logged_process(
+            orchestrator_command,
+            orchestrator_env,
+            log_dir / "orchestrator.log",
+        )
+        while True:
+            trainer_status = trainer_process.poll()
+            orchestrator_status = orchestrator_process.poll()
+            if trainer_status is not None:
+                log(f"Distributed trainer exited with status {trainer_status}")
+                return trainer_status
+            if orchestrator_status is not None:
+                log(f"Orchestrator exited with status {orchestrator_status}")
+                return orchestrator_status
+            time.sleep(2)
+    finally:
+        stop_process_group(orchestrator_process, "orchestrator")
+        stop_process_group(trainer_process, "distributed trainer")
+        if orchestrator_log is not None:
+            orchestrator_log.close()
+        if trainer_log is not None:
+            trainer_log.close()
 
 
 def parse_env_bool(name: str, default: bool = False) -> bool:
@@ -1283,6 +1513,10 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--optimizer", default="adamw")
+    parser.add_argument("--prime_lr_scheduler", default="constant", choices=("constant", "linear", "cosine"))
+    parser.add_argument("--prime_lr_warmup_steps", type=int, default=10)
+    parser.add_argument("--prime_lr_decay_steps", type=int, default=10)
+    parser.add_argument("--prime_lr_min", type=float, default=0.0)
     parser.add_argument("--prime_te_adamw_exp_avg_dtype", default="bfloat16", choices=("bfloat16", "float32"))
     parser.add_argument("--prime_te_adamw_exp_avg_sq_dtype", default="bfloat16", choices=("bfloat16", "float32"))
     parser.add_argument("--prime_te_adamw_master_weight_dtype", default="bfloat16", choices=("bfloat16", "float32"))
@@ -1321,12 +1555,19 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument(
         "--prime_component",
         default="full",
-        choices=("full", "trainer_orchestrator", "policy_inference", "teacher_inference"),
+        choices=("full", "trainer_orchestrator", "trainer_worker", "policy_inference", "teacher_inference"),
         help=(
             "Prime-RL component to run. 'full' preserves the existing single-node all-in-one launcher. "
-            "Use policy_inference, teacher_inference, and trainer_orchestrator for manual multi-node role-gated runs."
+            "Use policy_inference, teacher_inference, trainer_orchestrator, and trainer_worker "
+            "for manual multi-node role-gated runs."
         ),
     )
+    parser.add_argument("--prime_trainer_num_nodes", type=int, default=1)
+    parser.add_argument("--prime_trainer_node_rank", type=int, default=0)
+    parser.add_argument("--prime_trainer_master_addr", default=None)
+    parser.add_argument("--prime_trainer_master_port", type=int, default=29400)
+    parser.add_argument("--prime_trainer_rdzv_id", default=None)
+    parser.add_argument("--prime_trainer_rdzv_timeout", type=int, default=7200)
     parser.add_argument("--prime_algorithm", default="grpo", choices=("grpo", "opd"))
     parser.add_argument("--prime_env_id", default="math-env")
     parser.add_argument("--prime_env_name", default="math")
@@ -1622,8 +1863,10 @@ def main(argv: list[str] | None = None) -> int:
     resolve_runtime_assets(args)
 
     run_dir_name = os.environ.get("OLMO_RUN_DIR_NAME")
-    output_dir = make_run_dir(args.output_path, "/tmp/olmo3_prime_rl/output", run_dir_name)
-    log_dir = make_run_dir(args.logdir, "/tmp/olmo3_prime_rl/logs", run_dir_name)
+    output_run_dir_name = os.environ.get("OLMO_OUTPUT_RUN_DIR_NAME", run_dir_name)
+    log_run_dir_name = os.environ.get("OLMO_LOG_RUN_DIR_NAME", run_dir_name)
+    output_dir = make_run_dir(args.output_path, "/tmp/olmo3_prime_rl/output", output_run_dir_name)
+    log_dir = make_run_dir(args.logdir, "/tmp/olmo3_prime_rl/logs", log_run_dir_name)
     output_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1703,6 +1946,15 @@ def main(argv: list[str] | None = None) -> int:
         log(f"Prime-RL OPD teacher config={redacted(config['orchestrator_algo_teacher'])}")
     if args.dataset_path and env_config["id"] == "math-env":
         log(f"dataset_path is not used by built-in {env_config['id']!r} smoke: {args.dataset_path}")
+
+    if args.prime_component in {"trainer_orchestrator", "trainer_worker"} and args.prime_trainer_num_nodes > 1:
+        log(
+            "Starting distributed Prime-RL trainer component: "
+            f"node_rank={args.prime_trainer_node_rank}/{args.prime_trainer_num_nodes} "
+            f"gpus_per_node={args.prime_train_gpus} "
+            f"rdzv={args.prime_trainer_master_addr}:{args.prime_trainer_master_port}"
+        )
+        return run_distributed_trainer_component(args, config, log_dir)
 
     rl_entrypoint = shutil.which("rl")
     command = [rl_entrypoint, "@", str(config_path)] if rl_entrypoint else [sys.executable, "-m", "prime_rl.entrypoints.rl", "@", str(config_path)]
