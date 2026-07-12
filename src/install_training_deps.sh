@@ -24,6 +24,14 @@ OLMO_CORE_REPO="${OLMO_CORE_REPO:-https://github.com/nguyen599/OLMo-core.git}"
 OLMO_CORE_REF="${OLMO_CORE_REF:-main}"
 OLMO_CORE_DIR="${OLMO_CORE_DIR:-/opt/OLMo-core}"
 
+uv_pip() {
+    if [ -n "${VIRTUAL_ENV:-}" ]; then
+        uv pip "$@"
+    else
+        uv pip --system "$@"
+    fi
+}
+
 install_selected_nccl_wheel() {
     if python - "${NVIDIA_NCCL_DIST}" >/dev/null 2>&1 <<'PY'
 import sys
@@ -38,7 +46,7 @@ PY
     then
         echo "Skipping ${NVIDIA_NCCL_DIST} install; version 2.29.3 is already installed."
     else
-        uv pip install --system --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
+        uv_pip install --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
     fi
 }
 
@@ -67,13 +75,13 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 set -x
 
-uv pip install --system --upgrade --no-cache-dir pip setuptools wheel packaging ninja
-uv pip install --system --no-cache-dir -r "${REQUIREMENTS_FILE}"
+uv_pip install --upgrade --no-cache-dir pip setuptools wheel packaging ninja
+uv_pip install --no-cache-dir -r "${REQUIREMENTS_FILE}"
 # Transformers 5.8 imports the optional `kernels` registry while Open-Instruct
 # enumerates auto model classes. Current `kernels` releases raise at import
 # time because several registry entries omit revision/version metadata.
-uv pip uninstall --system kernels || true
-uv pip install --system --no-cache-dir --no-deps ring-flash-attn==0.1.8
+uv_pip uninstall kernels || true
+uv_pip install --no-cache-dir --no-deps ring-flash-attn==0.1.8
 install_selected_nccl_wheel
 
 if [ "${INSTALL_MODAL_SIMP_EXTRAS}" = "1" ]; then
@@ -106,19 +114,25 @@ OPEN_INSTRUCT_DIR="${OPEN_INSTRUCT_DIR}" python "${APP_DIR}/patch_open_instruct_
 # Some base images include the unrelated `beaker` package. OLMo-core's
 # Beaker integration expects `beaker-py`, whose import package is also
 # named `beaker`.
-uv pip uninstall --system beaker || true
-uv pip install --system --no-cache-dir -e "${OLMO_CORE_DIR}[beaker,wandb]"
-uv pip install --system --no-cache-dir --no-deps -e "${OPEN_INSTRUCT_DIR}"
-uv pip install --system --upgrade --pre --no-cache-dir --no-deps \
+uv_pip uninstall beaker || true
+uv_pip install --no-cache-dir -e "${OLMO_CORE_DIR}[beaker,wandb]"
+uv_pip install --no-cache-dir --no-deps -e "${OPEN_INSTRUCT_DIR}"
+uv_pip install --upgrade --pre --no-cache-dir --no-deps \
     --index-url "${TORCHAO_INDEX_URL}" "torchao"
 # Editable dependency installs may reintroduce optional packages; keep the final
 # runtime aligned with the Open-Instruct and OLMo-core paths tested in Modal.
-uv pip uninstall --system kernels || true
-uv pip install --system --no-cache-dir --no-deps ring-flash-attn==0.1.8
+uv_pip uninstall kernels || true
+uv_pip install --no-cache-dir --no-deps ring-flash-attn==0.1.8
 python - <<'PY'
+from importlib.util import find_spec
 from pathlib import Path
 
-path = Path("/usr/local/lib/python3.12/dist-packages/ring_flash_attn/adapters/hf_adapter.py")
+spec = find_spec("ring_flash_attn")
+path = (
+    Path(next(iter(spec.submodule_search_locations))) / "adapters" / "hf_adapter.py"
+    if spec is not None and spec.submodule_search_locations
+    else Path("/__missing_ring_flash_attn__/hf_adapter.py")
+)
 if path.exists():
     source = path.read_text()
     old = """try:
@@ -145,5 +159,5 @@ PY
 # The shared CUDA base may include an mslk wheel built against a different
 # torch ABI. torchao treats mslk as optional, but its presence can make
 # `import torchao` fail, so remove it in the OLMo training layer.
-uv pip uninstall --system mslk || true
+uv_pip uninstall mslk || true
 install_selected_nccl_wheel

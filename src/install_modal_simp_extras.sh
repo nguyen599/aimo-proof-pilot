@@ -65,6 +65,14 @@ VLLM_PREBUILT_WHEEL_PATH="${MODAL_EXTRAS_CACHE}/${VLLM_PREBUILT_WHEEL_NAME}"
 
 mkdir -p "${MODAL_EXTRAS_CACHE}"
 
+uv_pip() {
+    if [ -n "${VIRTUAL_ENV:-}" ]; then
+        uv pip "$@"
+    else
+        uv pip --system "$@"
+    fi
+}
+
 python_module_ok() {
     local module_name="$1"
     python - "${module_name}" >/dev/null 2>&1 <<'PY'
@@ -105,7 +113,7 @@ download_if_missing() {
 
 ensure_hf_cli() {
     if ! command -v hf >/dev/null 2>&1; then
-        uv pip install --system --no-cache-dir "huggingface_hub[cli]>=1.0.0"
+        uv_pip install --no-cache-dir "huggingface_hub[cli]>=1.0.0"
     fi
 }
 
@@ -171,9 +179,11 @@ if ! command -v uv >/dev/null 2>&1; then
     python -m pip install --no-cache-dir --upgrade uv
 fi
 
-# PyTorch images use dist-packages; several wheel build scripts look
-# for site-packages explicitly.
-ln -sfn /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/site-packages || true
+# PyTorch images use dist-packages; several wheel build scripts look for
+# site-packages explicitly. A venv already has the conventional layout.
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+    ln -sfn /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/site-packages || true
+fi
 
 apt_packages=(
     apt-utils \
@@ -264,7 +274,7 @@ apt-get install -y --no-install-recommends --allow-change-held-packages \
 
 rm -rf /var/lib/apt/lists/*
 
-uv pip install --system --upgrade --no-cache-dir \
+uv_pip install --upgrade --no-cache-dir \
     packaging \
     setuptools==80.0 \
     wheel \
@@ -273,7 +283,7 @@ uv pip install --system --upgrade --no-cache-dir \
 if python_module_ok ring_flash_attn; then
     echo "Skipping ring-flash-attention install; ring_flash_attn is already importable."
 else
-    uv pip install --system --no-cache-dir --no-build-isolation --no-deps \
+    uv_pip install --no-cache-dir --no-build-isolation --no-deps \
         "git+https://github.com/nguyen599/ring-flash-attention.git"
 fi
 
@@ -284,7 +294,7 @@ elif [ "${CUDA_MAJOR}" = "12" ] && [ "${VLLM_BUILD_FROM_SOURCE}" = "1" ]; then
         "${VLLM_PREBUILT_WHEEL_REPO}" \
         "${VLLM_PREBUILT_WHEEL_FILE}" \
         "${VLLM_PREBUILT_WHEEL_PATH}"; then
-        uv pip install --system --no-cache-dir \
+        uv_pip install --no-cache-dir \
             --index-strategy unsafe-best-match \
             --extra-index-url "${PYTORCH_INDEX_URL}" \
             --extra-index-url "${FLASHINFER_INDEX_URL}" \
@@ -300,7 +310,7 @@ elif [ "${CUDA_MAJOR}" = "12" ] && [ "${VLLM_BUILD_FROM_SOURCE}" = "1" ]; then
     fi
 elif [ "${CUDA_MAJOR}" = "12" ]; then
     echo "Installing published vLLM wheel; source build is disabled (VLLM_BUILD_FROM_SOURCE=${VLLM_BUILD_FROM_SOURCE})."
-    uv pip install --system --no-cache-dir --no-build-isolation \
+    uv_pip install --no-cache-dir --no-build-isolation \
         --index-strategy unsafe-best-match \
         --extra-index-url "${PYTORCH_INDEX_URL}" \
         --extra-index-url "https://download.pytorch.org/whl/cu129" \
@@ -309,7 +319,7 @@ elif [ "${CUDA_MAJOR}" = "12" ]; then
         "torch==$(python -c 'import torch; print(torch.__version__)')" \
         "${VLLM_WHEEL_URL}"
 else
-    uv pip install --system --no-cache-dir --no-build-isolation \
+    uv_pip install --no-cache-dir --no-build-isolation \
         --index-strategy unsafe-best-match \
         --extra-index-url "${PYTORCH_INDEX_URL}" \
         --extra-index-url "${FLASHINFER_INDEX_URL}" \
@@ -317,7 +327,7 @@ else
         "${VLLM_WHEEL_URL}"
 fi
 
-uv pip install --system --no-cache-dir \
+uv_pip install --no-cache-dir \
     "cuda-python[all]==${CUDA_PYTHON_VERSION}" \
     "cuda-toolkit[all]==${CUDA_VERSION}" \
     "${NVIDIA_CUBLASMP_DIST}==${CUDA_CUBLASMP_VERSION}" \
@@ -331,12 +341,12 @@ uv pip install --system --no-cache-dir \
 # TileLang currently pulls an apache-tvm-ffi build that can collide with
 # mamba-ssm/ModelOpt imports at runtime. Keep the older FFI ABI pinned until
 # TileLang and TVM FFI converge again.
-uv pip install --system --no-cache-dir --force-reinstall "${TVM_FFI_SPEC}"
+uv_pip install --no-cache-dir --force-reinstall "${TVM_FFI_SPEC}"
 
 if python_module_ok flashinfer; then
     echo "Skipping FlashInfer install; flashinfer is already importable."
 else
-    uv pip install --system --no-cache-dir \
+    uv_pip install --no-cache-dir \
         --extra-index-url "${FLASHINFER_INDEX_URL}" \
         flashinfer-python==0.6.13 \
         flashinfer-cubin==0.6.13 \
@@ -353,20 +363,20 @@ fi
 if python_module_ok flash_attn; then
     echo "Skipping FlashAttention 2 install; flash_attn is already importable."
 else
-    uv pip install --system --no-cache-dir --no-deps \
+    uv_pip install --no-cache-dir --no-deps \
         "${FLASH_ATTN_WHEEL_PATH}"
 fi
 if python_dist_ok flash-attn-3; then
     echo "Skipping FlashAttention 3 install; flash-attn-3 is already installed."
 else
-    uv pip install --system --no-cache-dir --no-deps \
+    uv_pip install --no-cache-dir --no-deps \
         "${FLASH_ATTN_3_WHEEL_PATH}"
 fi
 if [ "${INSTALL_FLASH_ATTN_4}" = "1" ]; then
     if python_module_ok flash_attn.cute; then
         echo "Skipping FlashAttention 4 install; flash_attn.cute is already importable."
     else
-        uv pip install --system --no-cache-dir --no-deps \
+        uv_pip install --no-cache-dir --no-deps \
             "${FLASH_ATTN_4_WHEEL_PATH}"
     fi
 else
@@ -381,22 +391,22 @@ if [ "${INSTALL_TRANSFORMER_ENGINE}" = "1" ]; then
             "${TRANSFORMER_ENGINE_WHEEL_REPO}" \
             "${TRANSFORMER_ENGINE_WHEEL_FILE}" \
             "${TRANSFORMER_ENGINE_WHEEL_PATH}"; then
-            uv pip install --system --compile-bytecode --no-cache-dir \
+            uv_pip install --compile-bytecode --no-cache-dir \
                 "${TRANSFORMER_ENGINE_WHEEL_PATH}"
         else
             echo "Installing Transformer Engine fallback for ${CUDA_WHEEL_TAG}: ${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
-            uv pip install --system --compile-bytecode --no-cache-dir --no-build-isolation \
+            uv_pip install --compile-bytecode --no-cache-dir --no-build-isolation \
                 "${TRANSFORMER_ENGINE_FALLBACK_SPEC}"
         fi
     fi
     transformer_engine_version="$(python -c 'from importlib.metadata import version; print(version("transformer-engine"))')"
     if [ "${CUDA_MAJOR}" = "12" ]; then
-        uv pip uninstall --system transformer-engine-cu13 || true
-        uv pip install --system --compile-bytecode --no-cache-dir \
+        uv_pip uninstall transformer-engine-cu13 || true
+        uv_pip install --compile-bytecode --no-cache-dir \
             "transformer-engine-cu12==${transformer_engine_version}"
     else
-        uv pip uninstall --system transformer-engine-cu12 || true
-        uv pip install --system --compile-bytecode --no-cache-dir \
+        uv_pip uninstall transformer-engine-cu12 || true
+        uv_pip install --compile-bytecode --no-cache-dir \
             "transformer-engine-cu13==${transformer_engine_version}"
     fi
 else
@@ -433,7 +443,7 @@ if [ "${INSTALL_COMPILED_MODAL_KERNELS}" = "1" ]; then
         if python_module_ok apex; then
             echo "Skipping Apex install; apex is already importable."
         else
-            uv pip install --system --no-cache-dir --no-build-isolation \
+            uv_pip install --no-cache-dir --no-build-isolation \
                 "${APEX_WHEEL}"
         fi
         python - <<'PY'
@@ -451,7 +461,7 @@ PY
         echo "Skipping nv-grouped-gemm install; distribution is already installed."
     else
         TORCH_CUDA_ARCH_LIST="${NV_GROUPED_GEMM_TORCH_CUDA_ARCH_LIST}" \
-        uv pip install --system --compile-bytecode --no-cache-dir \
+        uv_pip install --compile-bytecode --no-cache-dir \
             --no-build-isolation --no-deps nv-grouped-gemm~=1.1
     fi
 
@@ -491,16 +501,16 @@ PY
     if python_module_ok causal_conv1d; then
         echo "Skipping causal-conv1d install; causal_conv1d is already importable."
     else
-        uv pip install --system --compile-bytecode --no-cache-dir --no-deps "${CAUSAL_CONV1D_WHEEL}"
+        uv_pip install --compile-bytecode --no-cache-dir --no-deps "${CAUSAL_CONV1D_WHEEL}"
     fi
     if python_module_ok mamba_ssm; then
         echo "Skipping mamba-ssm install; mamba_ssm is already importable."
     else
-        uv pip install --system --compile-bytecode --no-cache-dir --no-deps "${MAMBA_SSM_WHEEL}"
+        uv_pip install --compile-bytecode --no-cache-dir --no-deps "${MAMBA_SSM_WHEEL}"
     fi
 fi
 
-uv pip install --system --no-cache-dir \
+uv_pip install --no-cache-dir \
     hatchling \
     editables \
     poetry_dynamic_versioning \
@@ -508,13 +518,13 @@ uv pip install --system --no-cache-dir \
     grpcio-tools
 
 if [ "${INSTALL_VERL_PACKAGE}" = "1" ]; then
-    uv pip install --system --no-cache-dir "${VERL_PACKAGE}"
+    uv_pip install --no-cache-dir "${VERL_PACKAGE}"
 else
     echo "Skipping VERL package install because INSTALL_VERL_PACKAGE=${INSTALL_VERL_PACKAGE}."
 fi
 
 if [ "${INSTALL_PRIME_RL_DEPS}" = "1" ]; then
-    uv pip install --system --no-cache-dir \
+    uv_pip install --no-cache-dir \
         "${TORCHTITAN_REQUIREMENT}" \
         "${DION_REQUIREMENT}" \
         "${DEEP_EP_REQUIREMENT}"
@@ -525,7 +535,7 @@ fi
 if python_dist_ok nvidia-resiliency-ext; then
     echo "Skipping nvidia-resiliency-ext install; distribution is already installed."
 else
-    uv pip install --system --no-cache-dir --no-build-isolation \
+    uv_pip install --no-cache-dir --no-build-isolation \
         "git+https://github.com/NVIDIA/nvidia-resiliency-ext.git"
 fi
 
@@ -537,7 +547,7 @@ if [ "${INSTALL_MEGATRON_CORE}" = "1" ]; then
     git -C "${MEGATRON_CORE_DIR}" remote set-url origin "${MEGATRON_CORE_REPO}"
     git -C "${MEGATRON_CORE_DIR}" fetch --depth 1 origin "${MEGATRON_CORE_REF}"
     git -C "${MEGATRON_CORE_DIR}" checkout --force FETCH_HEAD
-    uv pip install --system --no-cache-dir --no-deps "${MEGATRON_CORE_DIR}"
+    uv_pip install --no-cache-dir --no-deps "${MEGATRON_CORE_DIR}"
     PYTHONPATH="${MEGATRON_CORE_DIR}${PYTHONPATH:+:${PYTHONPATH}}" python - <<'PY'
 print("Skip Megatron check")
 PY
@@ -553,7 +563,7 @@ if [ "${INSTALL_LIGER_KERNEL}" = "1" ]; then
     git -C "${LIGER_KERNEL_DIR}" remote set-url origin "${LIGER_KERNEL_REPO}"
     git -C "${LIGER_KERNEL_DIR}" fetch --depth 1 origin "${LIGER_KERNEL_REF}"
     git -C "${LIGER_KERNEL_DIR}" checkout --force FETCH_HEAD
-    uv pip install --system --no-cache-dir --no-deps "${LIGER_KERNEL_DIR}"
+    uv_pip install --no-cache-dir --no-deps "${LIGER_KERNEL_DIR}"
 
 else
     echo "Skipping Liger Kernel install because INSTALL_LIGER_KERNEL=${INSTALL_LIGER_KERNEL}."
@@ -564,7 +574,7 @@ fi
 if python_dist_ok "${NVIDIA_NCCL_DIST}" 2.29.3; then
     echo "Skipping ${NVIDIA_NCCL_DIST} install; version 2.29.3 is already installed."
 else
-    uv pip install --system --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
+    uv_pip install --no-cache-dir --no-deps "${NVIDIA_NCCL_DIST}==2.29.3"
 fi
 
 # Re-pin nvidia-cutlass-dsl to vLLM's own ==4.5.2 LAST. flashinfer / quack / flash-attn-4 pull it
@@ -574,7 +584,7 @@ fi
 if python_dist_ok nvidia-cutlass-dsl 4.5.2; then
     echo "Skipping nvidia-cutlass-dsl re-pin; version 4.5.2 is already installed."
 else
-    uv pip install --system --no-cache-dir "${NVIDIA_CUTLASS_DSL_SPEC}"
+    uv_pip install --no-cache-dir "${NVIDIA_CUTLASS_DSL_SPEC}"
 fi
 
 verify_modules=(flash_attn flashinfer vllm)
