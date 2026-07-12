@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from train_engine_rl import build_prime_policy_inference_config
 from train_engine_rl import build_prime_rl_config
+from train_engine_rl import build_prime_teacher_inference_config
 from train_engine_rl import parse_args
 
 
@@ -87,3 +89,30 @@ def test_candidate_gate_is_forwarded_for_eight_member_groups() -> None:
     assert env["group_size"] == 8
     assert env["args"]["candidate_gate_enabled"] is True
     assert env["args"]["candidate_continue_count"] == 4
+
+
+def test_inference_lm_heads_default_to_bfloat16_projection() -> None:
+    args = make_args()
+
+    combined = build_prime_rl_config(args, Path("/tmp/output"))
+    policy = build_prime_policy_inference_config(args, Path("/tmp/policy"))
+    teacher = build_prime_teacher_inference_config(args, Path("/tmp/teacher"))
+
+    assert combined["inference"]["enable_fp32_lm_head"] is False
+    assert policy["inference"]["enable_fp32_lm_head"] is False
+    assert teacher["inference"]["enable_fp32_lm_head"] is False
+
+
+def test_fp32_inference_lm_heads_remain_explicitly_available() -> None:
+    args = make_args(
+        "--prime_vllm_enable_fp32_lm_head",
+        "true",
+        "--prime_opd_teacher_vllm_enable_fp32_lm_head",
+        "true",
+    )
+
+    policy = build_prime_policy_inference_config(args, Path("/tmp/policy"))
+    teacher = build_prime_teacher_inference_config(args, Path("/tmp/teacher"))
+
+    assert policy["inference"]["enable_fp32_lm_head"] is True
+    assert teacher["inference"]["enable_fp32_lm_head"] is True

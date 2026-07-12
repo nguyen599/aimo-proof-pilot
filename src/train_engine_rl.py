@@ -684,6 +684,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "data_parallel_rpc_port": args.prime_vllm_data_parallel_rpc_port,
             "enable_prefix_caching": args.prime_vllm_enable_prefix_caching,
             "use_deep_gemm": args.prime_vllm_use_deep_gemm,
+            "enable_fp32_lm_head": args.prime_vllm_enable_fp32_lm_head,
         }
         if include_local_inference
         else None,
@@ -733,6 +734,7 @@ def build_prime_policy_inference_config(args: argparse.Namespace, output_dir: Pa
             "data_parallel_rpc_port": args.prime_vllm_data_parallel_rpc_port,
             "enable_prefix_caching": args.prime_vllm_enable_prefix_caching,
             "use_deep_gemm": args.prime_vllm_use_deep_gemm,
+            "enable_fp32_lm_head": args.prime_vllm_enable_fp32_lm_head,
         },
         "vllm_extra": vllm_extra,
     }
@@ -784,6 +786,7 @@ def build_prime_teacher_inference_config(args: argparse.Namespace, output_dir: P
             "data_parallel_rpc_port": args.prime_opd_teacher_vllm_data_parallel_rpc_port,
             "enable_prefix_caching": args.prime_opd_teacher_vllm_enable_prefix_caching,
             "use_deep_gemm": args.prime_opd_teacher_vllm_use_deep_gemm,
+            "enable_fp32_lm_head": args.prime_opd_teacher_vllm_enable_fp32_lm_head,
         },
         "vllm_extra": vllm_extra,
     }
@@ -1299,6 +1302,12 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_vllm_data_parallel_rpc_port", type=int, default=13345)
     parser.add_argument("--prime_vllm_enable_prefix_caching", type=parse_bool, default=True)
     parser.add_argument("--prime_vllm_use_deep_gemm", type=parse_bool, default=False)
+    parser.add_argument(
+        "--prime_vllm_enable_fp32_lm_head",
+        type=parse_bool,
+        default=False,
+        help="Use Prime-RL's optional FP32 policy LM-head projection instead of BF16.",
+    )
     parser.add_argument("--prime_vllm_quantization", default=None)
     parser.add_argument("--prime_vllm_max_num_seqs", type=int, default=None)
     parser.add_argument("--prime_vllm_max_num_batched_tokens", type=int, default=None)
@@ -1322,6 +1331,12 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_opd_teacher_vllm_data_parallel_rpc_port", type=int, default=13345)
     parser.add_argument("--prime_opd_teacher_vllm_enable_prefix_caching", type=parse_bool, default=True)
     parser.add_argument("--prime_opd_teacher_vllm_use_deep_gemm", type=parse_bool, default=False)
+    parser.add_argument(
+        "--prime_opd_teacher_vllm_enable_fp32_lm_head",
+        type=parse_bool,
+        default=False,
+        help="Use Prime-RL's optional FP32 teacher LM-head projection instead of BF16.",
+    )
     parser.add_argument("--prime_opd_teacher_vllm_quantization", default=None)
     parser.add_argument("--prime_opd_teacher_vllm_max_num_seqs", type=int, default=None)
     parser.add_argument("--prime_opd_teacher_vllm_max_num_batched_tokens", type=int, default=None)
