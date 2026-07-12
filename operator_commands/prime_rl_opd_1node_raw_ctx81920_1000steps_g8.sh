@@ -60,7 +60,9 @@ export PRIME_OPD_TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-901
 export PRIME_OPD_POLICY_MAX_NUM_SEQS="${PRIME_OPD_POLICY_MAX_NUM_SEQS:-6}"
 export PRIME_OPD_TEACHER_MAX_NUM_SEQS="${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-1}"
 export PRIME_OPD_MAX_INFLIGHT_ROLLOUTS="${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-24}"
-export PRIME_OPD_MAX_INFLIGHT_QUESTIONS="${PRIME_OPD_MAX_INFLIGHT_QUESTIONS:-4}"
+# Keep question admission uncapped. vLLM priority scheduling dynamically
+# preempts later proof requests when verifier/meta/refine continuations arrive.
+export PRIME_OPD_MAX_INFLIGHT_QUESTIONS="${PRIME_OPD_MAX_INFLIGHT_QUESTIONS:-0}"
 export PRIME_VLLM_EXTRA="${PRIME_VLLM_EXTRA:-{\"kv_cache_dtype\":\"fp8\",\"block_size\":256,\"scheduling_policy\":\"priority\",\"compilation_config\":{\"pass_config\":{\"fuse_allreduce_rms\":false}}}}"
 
 # Prime-RL forms one environment group from eight independently sampled proof
