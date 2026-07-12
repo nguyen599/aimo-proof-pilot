@@ -1184,6 +1184,7 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
             raw_output = trajectory_step_text(trajectory[-1])
             is_truncated = trajectory_step_is_truncated(trajectory[-1])
             finish_reason = trajectory_step_finish_reason(trajectory[-1])
+        info["stage"] = stage
         info["proof_opd_trace"] = {
             "source_index": info.get("source_index") or state.get("source_index"),
             "stage": stage,
@@ -1192,13 +1193,9 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
             "is_truncated": is_truncated,
             "stage_records": [
                 {
-                    "stage": stage,
                     "round_index": 0,
                     "verify_index": 0,
                     "raw_chars": len(raw_output),
-                    "raw_output_excerpt": clipped_trace_text(raw_output),
-                    "is_truncated": is_truncated,
-                    "finish_reason": finish_reason,
                     "source": "single_turn_dataset",
                 }
             ],
