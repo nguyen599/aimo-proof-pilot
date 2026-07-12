@@ -18,6 +18,10 @@ from urllib.request import urlopen
 
 
 TRUTHY = {"1", "true", "yes", "on"}
+DEFAULT_STUDENT_HF_REPO = "chankhavu/yccchen-olmo3-deploy"
+DEFAULT_TEACHER_HF_REPO = "deepseek-ai/DeepSeek-V4-Flash"
+DEFAULT_DATASET_HF_REPO = "ycchen/dsflash-proof-distill-v2-test"
+DEFAULT_DATASET_HF_FILENAME = "data/per_turn.parquet"
 
 
 def parse_bool(value: str | bool | None, default: bool = False) -> bool:
@@ -128,6 +132,178 @@ def apply_runtime_auth_defaults() -> list[str]:
             os.environ["WANDB_API_KEY"] = wandb_key
             configured.append("wandb")
     return configured
+
+
+def hf_repo_local_name(repo_id: str) -> str:
+    return repo_id.strip().replace("/", "--")
+
+
+def model_snapshot_complete(model_path: Path) -> bool:
+    if not (model_path / "config.json").is_file():
+        return False
+    index_paths = sorted(model_path.glob("*.safetensors.index.json"))
+    if index_paths:
+        try:
+            index = json.loads(index_paths[0].read_text(encoding="utf-8"))
+            shards = set(index.get("weight_map", {}).values())
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return False
+        return bool(shards) and all((model_path / shard).is_file() for shard in shards)
+    return any(model_path.glob("*.safetensors")) or any(model_path.glob("pytorch_model*.bin"))
+
+
+def download_model_snapshot(
+    *,
+    repo_id: str,
+    target_root: Path,
+    revision: str | None,
+    subdir: str | None,
+    cache_dir: Path | None,
+) -> Path:
+    normalized_subdir = (subdir or "").strip("/")
+    model_path = target_root / normalized_subdir if normalized_subdir else target_root
+    if model_snapshot_complete(model_path):
+        log(f"Using complete local HF model snapshot: {model_path}")
+        return model_path
+
+    from huggingface_hub import snapshot_download
+
+    target_root.mkdir(parents=True, exist_ok=True)
+    log(f"Downloading HF model repo={repo_id} revision={revision or 'main'} target={target_root}")
+    snapshot_download(
+        repo_id=repo_id,
+        revision=revision,
+        local_dir=str(target_root),
+        cache_dir=str(cache_dir) if cache_dir is not None else None,
+        token=os.environ.get("HF_TOKEN") or None,
+        allow_patterns=[f"{normalized_subdir}/**"] if normalized_subdir else None,
+    )
+    if not model_snapshot_complete(model_path):
+        raise FileNotFoundError(f"HF model download completed but weights are incomplete: {model_path}")
+    return model_path
+
+
+def download_dataset_file(
+    *,
+    repo_id: str,
+    filename: str,
+    target_path: Path,
+    revision: str | None,
+    cache_dir: Path | None,
+) -> Path:
+    if target_path.is_file() and target_path.stat().st_size > 0:
+        log(f"Using existing dataset file: {target_path}")
+        return target_path
+
+    from huggingface_hub import hf_hub_download
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    log(
+        f"Downloading HF dataset repo={repo_id} file={filename} "
+        f"revision={revision or 'main'} target={target_path}"
+    )
+    downloaded = Path(
+        hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=filename,
+            revision=revision,
+            cache_dir=str(cache_dir) if cache_dir is not None else None,
+            token=os.environ.get("HF_TOKEN") or None,
+        )
+    )
+    temporary = target_path.with_name(f".{target_path.name}.tmp-{os.getpid()}")
+    try:
+        os.link(downloaded, temporary)
+    except OSError:
+        shutil.copyfile(downloaded, temporary)
+    temporary.replace(target_path)
+    return target_path
+
+
+def resolve_runtime_assets(args: argparse.Namespace) -> None:
+    assets_dir = Path(args.hf_assets_dir).expanduser().resolve()
+    cache_dir = Path(args.hf_cache_dir).expanduser().resolve() if args.hf_cache_dir else None
+    component = args.prime_component
+
+    student_repo = args.model_hf_repo
+    student_needed = component in {"full", "policy_inference", "trainer_orchestrator"}
+    if student_needed:
+        if args.model_path and model_snapshot_complete(Path(args.model_path).expanduser()):
+            args.model_path = str(Path(args.model_path).expanduser().resolve())
+        else:
+            if not student_repo:
+                raise ValueError("--model_path or --model_hf_repo is required")
+            target = (
+                Path(args.model_path).expanduser()
+                if args.model_path
+                else assets_dir / "models" / hf_repo_local_name(student_repo)
+            )
+            args.model_path = str(
+                download_model_snapshot(
+                    repo_id=student_repo,
+                    target_root=target,
+                    revision=args.model_hf_revision,
+                    subdir=args.model_hf_subdir,
+                    cache_dir=cache_dir,
+                )
+            )
+    elif not args.model_path:
+        args.model_path = student_repo
+
+    teacher_repo = args.prime_opd_teacher_hf_repo
+    teacher_needed = args.prime_algorithm == "opd" and (
+        component in {"full", "teacher_inference"}
+        or (component == "trainer_orchestrator" and args.prime_opd_distill_mode == "full_vocab_hidden")
+    )
+    if args.prime_algorithm == "opd" and teacher_needed:
+        if args.prime_opd_teacher_model and model_snapshot_complete(
+            Path(args.prime_opd_teacher_model).expanduser()
+        ):
+            args.prime_opd_teacher_model = str(Path(args.prime_opd_teacher_model).expanduser().resolve())
+        else:
+            if not teacher_repo:
+                raise ValueError("--prime_opd_teacher_model or --prime_opd_teacher_hf_repo is required for OPD")
+            target = (
+                Path(args.prime_opd_teacher_model).expanduser()
+                if args.prime_opd_teacher_model
+                else assets_dir / "models" / hf_repo_local_name(teacher_repo)
+            )
+            args.prime_opd_teacher_model = str(
+                download_model_snapshot(
+                    repo_id=teacher_repo,
+                    target_root=target,
+                    revision=args.prime_opd_teacher_hf_revision,
+                    subdir=args.prime_opd_teacher_hf_subdir,
+                    cache_dir=cache_dir,
+                )
+            )
+    elif args.prime_algorithm == "opd" and not args.prime_opd_teacher_model:
+        args.prime_opd_teacher_model = teacher_repo
+
+    dataset_needed = (
+        component in {"full", "trainer_orchestrator"}
+        and args.prime_env_id != "math-env"
+    )
+    if dataset_needed and args.dataset_hf_repo:
+        if not args.dataset_hf_filename:
+            raise ValueError("--dataset_hf_filename is required with --dataset_hf_repo")
+        requested_path = args.prime_proof_dataset_path or args.dataset_path
+        target = (
+            Path(requested_path).expanduser()
+            if requested_path
+            else assets_dir / "data" / Path(args.dataset_hf_filename).name
+        )
+        resolved = download_dataset_file(
+            repo_id=args.dataset_hf_repo,
+            filename=args.dataset_hf_filename,
+            target_path=target,
+            revision=args.dataset_hf_revision,
+            cache_dir=cache_dir,
+        )
+        args.dataset_path = str(resolved)
+        if args.prime_proof_dataset_path:
+            args.prime_proof_dataset_path = str(resolved)
 
 
 def make_run_dir(base: str | None, fallback: str, run_dir_name: str | None) -> Path:
@@ -1078,9 +1254,25 @@ def run_prime_inference_component(args: argparse.Namespace, log_dir: Path, compo
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(description="Prime-RL training entrypoint for OLMo3Sink smoke tests")
     parser.add_argument("--backend", default="prime_rl")
-    parser.add_argument("--model_path", required=True)
+    parser.add_argument("--model_path", default=None)
+    parser.add_argument("--model_hf_repo", default=DEFAULT_STUDENT_HF_REPO)
+    parser.add_argument("--model_hf_revision", default=None)
+    parser.add_argument("--model_hf_subdir", default=None)
+    parser.add_argument(
+        "--hf_assets_dir",
+        default=os.environ.get("PRIME_HF_ASSETS_DIR", "/tmp/aimo-proof-pilot-assets"),
+        help="Root used to materialize model snapshots and dataset files supplied as HF repos.",
+    )
+    parser.add_argument(
+        "--hf_cache_dir",
+        default=os.environ.get("HF_HOME"),
+        help="Optional huggingface_hub cache directory used during automatic downloads.",
+    )
     parser.add_argument("--tokenizer_path", default=None)
     parser.add_argument("--dataset_path", default=None)
+    parser.add_argument("--dataset_hf_repo", default=DEFAULT_DATASET_HF_REPO)
+    parser.add_argument("--dataset_hf_filename", default=DEFAULT_DATASET_HF_FILENAME)
+    parser.add_argument("--dataset_hf_revision", default=None)
     parser.add_argument("--output_path", default=None)
     parser.add_argument("--logdir", default=None)
     parser.add_argument("--prime_rl_dir", "--prime-rl-dir", default=None)
@@ -1332,6 +1524,9 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_vllm_reasoning_parser", default="deepseek_v4")
     parser.add_argument("--prime_vllm_extra", default=None)
     parser.add_argument("--prime_opd_teacher_model", default=None)
+    parser.add_argument("--prime_opd_teacher_hf_repo", default=DEFAULT_TEACHER_HF_REPO)
+    parser.add_argument("--prime_opd_teacher_hf_revision", default=None)
+    parser.add_argument("--prime_opd_teacher_hf_subdir", default=None)
     parser.add_argument("--prime_opd_teacher_tokenizer_path", default=None)
     parser.add_argument("--prime_opd_teacher_base_url", default=None)
     parser.add_argument("--prime_opd_start_teacher", type=parse_bool, default=True)
@@ -1423,6 +1618,8 @@ def main(argv: list[str] | None = None) -> int:
     configured_auth = apply_runtime_auth_defaults()
     if configured_auth:
         log("Configured runtime auth defaults for: " + ", ".join(configured_auth))
+    os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
+    resolve_runtime_assets(args)
 
     run_dir_name = os.environ.get("OLMO_RUN_DIR_NAME")
     output_dir = make_run_dir(args.output_path, "/tmp/olmo3_prime_rl/output", run_dir_name)

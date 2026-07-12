@@ -160,6 +160,34 @@ Verifier and meta-verifier calls are local model calls in this OPD setup, not Op
 
 Use `--prime_proof_dataset_mode single` for a parquet/JSON/CSV dataset whose rows already contain complete chat prompts in `messages_json`. This mode accepts only `stage=prove`, `verify`, `select`, or `refine`; `plain`, `meta`, unknown stages, and malformed message rows are excluded. Each accepted row makes exactly one model call and then ends, so no proof parser, prompt template, candidate gate, verifier chaining, or refinement chaining is applied by the environment.
 
+`train_engine_rl.py` can materialize all three primary assets directly from
+Hugging Face, so local model and dataset paths are optional. The defaults are:
+
+- student: `chankhavu/yccchen-olmo3-deploy`;
+- teacher: `deepseek-ai/DeepSeek-V4-Flash`;
+- data: `ycchen/dsflash-proof-distill-v2-test`, file `data/per_turn.parquet`.
+
+Use `--hf_assets_dir` for the materialized files and `--hf_cache_dir` for the
+Hugging Face cache. Existing complete local paths still take precedence. In a
+separated deployment, policy components download only the student, the teacher
+component downloads only the teacher, and the trainer/orchestrator downloads
+the dataset plus model artifacts required by its loss.
+
+```bash
+python src/train.py \
+  --backend prime_rl \
+  --prime_algorithm opd \
+  --prime_env_id proof-opd-env \
+  --prime_proof_dataset_mode single \
+  --model_hf_repo chankhavu/yccchen-olmo3-deploy \
+  --prime_opd_teacher_hf_repo deepseek-ai/DeepSeek-V4-Flash \
+  --dataset_hf_repo ycchen/dsflash-proof-distill-v2-test \
+  --dataset_hf_filename data/per_turn.parquet \
+  --hf_assets_dir /data/aimo-proof-pilot/assets \
+  --hf_cache_dir /data/aimo-proof-pilot/hf-cache \
+  ...
+```
+
 The source `messages_json` must decode to a non-empty list of `{role, content}` messages. Existing system messages and user instructions are passed to vLLM unchanged. Prime-RL must use one rollout per row:
 
 ```bash
