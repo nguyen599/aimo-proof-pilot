@@ -655,6 +655,7 @@ COMMON_ARGS=(
   --prime_proof_num_verifiers "${PRIME_PROOF_NUM_VERIFIERS:-4}"
   --prime_proof_refine_rounds "${PRIME_PROOF_REFINE_ROUNDS:-0}"
   --prime_proof_refine_review_n "${PRIME_PROOF_REFINE_REVIEW_N:-2}"
+  --prime_proof_selector_top_k "${PRIME_PROOF_SELECTOR_TOP_K:-3}"
   --prime_proof_candidate_gate true
   --prime_proof_candidate_continue_count "${CANDIDATE_CONTINUE_COUNT}"
   --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}"

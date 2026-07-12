@@ -11,6 +11,7 @@ from train import prime_rl_source_requirements
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMAND = REPO_ROOT / "operator_commands" / "prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh"
+PRODUCTION_COMMAND = REPO_ROOT / "operator_commands" / "prime_rl_opd_1node_raw_ctx81920_1000steps_g8.sh"
 
 
 def test_prime_runtime_installs_verifiers_sandbox_dependency(monkeypatch) -> None:
@@ -72,3 +73,15 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
     assert os.sys.executable in output
     assert str(REPO_ROOT / "src" / "train.py") in output
     assert "disable_custom_all_reduce" not in output
+
+
+def test_one_node_production_command_uses_requested_long_context_shape() -> None:
+    text = PRODUCTION_COMMAND.read_text()
+
+    assert 'PRIME_TRAIN_GPUS:-4' in text
+    assert 'MAX_TRAIN_STEPS:-1000' in text
+    assert 'PRIME_OPD_CTX_LEN:-81920' in text
+    assert 'PRIME_GROUP_SIZE:-8' in text
+    assert 'PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4' in text
+    assert 'PRIME_PACKED_SEQUENCES_PER_STEP:-64' in text
+    assert 'WANDB_MODE=online' in text
