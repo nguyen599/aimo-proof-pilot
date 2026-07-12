@@ -614,6 +614,27 @@ launch_train() {
     printf '\n'
     return 0
   fi
+  local monitor_interval="${PRIME_RESOURCE_MONITOR_INTERVAL_SECONDS:-15}"
+  if [[ "${monitor_interval}" =~ ^[0-9]+$ ]] && (( monitor_interval > 0 )); then
+    local monitored_pid=$$
+    local resource_log="${LOG_ROOT}/resource_usage.log"
+    mkdir -p "${LOG_ROOT}"
+    (
+      while kill -0 "${monitored_pid}" 2>/dev/null; do
+        {
+          printf '\n[%s] cgroup_memory_current=' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat /sys/fs/cgroup/memory.current 2>/dev/null || printf 'unavailable\n'
+          printf 'cgroup_memory_peak='
+          cat /sys/fs/cgroup/memory.peak 2>/dev/null || printf 'unavailable\n'
+          printf 'cgroup_memory_events='
+          tr '\n' ' ' < /sys/fs/cgroup/memory.events 2>/dev/null || true
+          printf '\n'
+          ps -eo pid,ppid,rss,comm,args --sort=-rss | head -n 17
+        } >> "${resource_log}" 2>&1
+        sleep "${monitor_interval}"
+      done
+    ) &
+  fi
   exec "$@"
 }
 
@@ -694,7 +715,10 @@ COMMON_ARGS=(
   --prime_trainer_fsdp_cpu_offload false
   --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
   --prime_trainer_fp8 "${PRIME_TRAINER_FP8:-true}"
-  --prime_trainer_compile "${PRIME_TRAINER_COMPILE:-true}"
+  # Compiling every decoder layer during the first full-vocab backward can
+  # exceed the one-node container's host-memory cgroup. Keep compilation
+  # available as an explicit override after the eager path is established.
+  --prime_trainer_compile "${PRIME_TRAINER_COMPILE:-false}"
   --prime_weight_broadcast_type "${PRIME_WEIGHT_BROADCAST_TYPE:-filesystem}"
   --prime_weight_broadcast_port "${PRIME_WEIGHT_BROADCAST_PORT:-29501}"
   --prime_weight_broadcast_timeout "${PRIME_WEIGHT_BROADCAST_TIMEOUT:-7200}"
