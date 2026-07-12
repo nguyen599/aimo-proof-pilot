@@ -477,13 +477,10 @@ BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 # DeepSeek-V4-Flash is close to the H200 memory limit even in FP8/MXFP4.
 # The teacher endpoint is used for serialized hidden-state scoring, so keep its
 # startup profiling shape much smaller than the policy rollout endpoint.
-if [[ "${OPD_DISTILL_MODE}" == "token_logprobs" ]]; then
-  # Prompt-logprob scoring otherwise materializes [context, vocab] FP32
-  # log-softmax tensors. Keep prefill chunked independently of max_model_len.
-  TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-4096}"
-else
-  TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-32768}"
-fi
+# Keep teacher prefill chunks independent of max_model_len. Larger values make
+# DeepSeek-V4 compile thousands of DeepGEMM warmup shapes before binding its API
+# port; 4096 is also the last verified full-vocab hidden-state configuration.
+TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-4096}"
 MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
 PROOF_DATASET_MODE="${PRIME_PROOF_DATASET_MODE:-mixed}"
