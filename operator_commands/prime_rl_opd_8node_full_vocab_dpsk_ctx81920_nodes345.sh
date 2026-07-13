@@ -575,6 +575,10 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-0
   rm -rf /dev/shm/vllm-* /dev/shm/vllm_* /tmp/vllm-* /tmp/vllm_* /tmp/torch-* /tmp/torchelastic_* 2>/dev/null || true
 fi
 
+# The stale-runtime glob above also matches /tmp/vllm-rpc. Recreate this
+# launch's private IPC root after cleanup so vLLM can bind its ZMQ sockets.
+mkdir -p "${VLLM_RPC_BASE_PATH}"
+
 MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/tmp/models/opd-32b-deploy/opd-32b-deploy}"
 TEACHER_MODEL_PATH="${PRIME_OPD_TEACHER_MODEL_PATH:-/tmp/models/dpsk-v4-flash}"
 TRAIN_PYTHON="${PRIME_TRAIN_PYTHON:-/usr/bin/python}"
