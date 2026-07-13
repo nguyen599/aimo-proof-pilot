@@ -305,7 +305,15 @@ export VLLM_ALLOW_INSECURE_SERIALIZATION="${VLLM_ALLOW_INSECURE_SERIALIZATION:-1
 # breakable CUDA graph profiling in Prime-RL worker mode. Explicitly opting out
 # keeps the normal non-eager vLLM compile/cudagraph path, matching the standalone
 # vllm serve baseline for this checkpoint.
-export VLLM_USE_BREAKABLE_CUDAGRAPH="${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}"
+case "${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}" in
+  0 | false | False | FALSE | no | No | NO | off | Off | OFF)
+    # vLLM checks variable presence rather than parsing its boolean value.
+    unset VLLM_USE_BREAKABLE_CUDAGRAPH
+    ;;
+  *)
+    export VLLM_USE_BREAKABLE_CUDAGRAPH
+    ;;
+esac
 # The DeepSeek-V4 sparse MLA startup warmup can fail with an invalid resource
 # handle on the cluster even after normal vLLM startup gets past model load.
 # This does not change the runtime attention backend; it only skips optional
