@@ -100,6 +100,12 @@ def test_one_node_production_command_uses_requested_long_context_shape() -> None
     assert 'WANDB_MODE=online' in text
 
 
+def test_role_cleanup_handles_reparented_prime_trainer_workers() -> None:
+    text = COMMAND.read_text()
+
+    assert 'PRIME-RL::Trainer' in text
+
+
 def test_two_trainer_node_layout_assigns_distributed_ranks(tmp_path: Path) -> None:
     rendezvous = tmp_path / "rendezvous"
     rendezvous.mkdir()
