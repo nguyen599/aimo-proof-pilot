@@ -582,12 +582,14 @@ OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${TMP_ROOT}/output}"
 LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${TMP_ROOT}/logs}"
 CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME}_${PRIME_COMPONENT_ROLE}}"
 
-CTX_LEN="${PRIME_OPD_CTX_LEN:-8192}"
-VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-16384}"
+# H200 production profile. The B200 Beaker template can override these with
+# its 131k/133120 values; H200 keeps enough headroom for 65k-token rollouts.
+CTX_LEN="${PRIME_OPD_CTX_LEN:-81920}"
+VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-90112}"
 TEACHER_VLLM_CTX_LEN="${PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN:-${VLLM_CTX_LEN}}"
 OPD_DISTILL_MODE="${PRIME_OPD_DISTILL_MODE:-token_logprobs}"
-COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-8192}"
-EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-8192}"
+COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-65000}"
+EVAL_COMPLETION_TOKENS="${PRIME_OPD_EVAL_COMPLETION_TOKENS:-${COMPLETION_TOKENS}}"
 BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 # DeepSeek-V4-Flash is close to the H200 memory limit even in FP8/MXFP4.
 # The teacher endpoint is used for serialized hidden-state scoring, so keep its
@@ -596,7 +598,7 @@ BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 # DeepSeek-V4 compile thousands of DeepGEMM warmup shapes before binding its API
 # port; 4096 is also the last verified full-vocab hidden-state configuration.
 TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-4096}"
-MAX_STEPS="${MAX_TRAIN_STEPS:-100}"
+MAX_STEPS="${MAX_TRAIN_STEPS:-1000}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
 PROOF_DATASET_MODE="${PRIME_PROOF_DATASET_MODE:-mixed}"
 if [[ "${PROOF_DATASET_MODE}" == "single" || "${PROOF_DATASET_MODE}" == "single_turn" || "${PROOF_DATASET_MODE}" == "per_turn" ]]; then
@@ -633,8 +635,10 @@ if (( POLICY_GPU_COUNT < 1 || POLICY_GPU_COUNT > 8 )); then
   exit 1
 fi
 POLICY_API_SERVER_COUNT="${PRIME_VLLM_API_SERVER_COUNT:-${POLICY_DP}}"
-POLICY_REQS_PER_DP="${PRIME_OPD_POLICY_REQS_PER_DP:-2}"
-POLICY_MAX_NUM_SEQS_DEFAULT=$((POLICY_DP * POLICY_REQS_PER_DP))
+# max_num_seqs is per DP worker, not per policy node. Six workers per rank
+# yield the intended 48 requests per eight-GPU policy node.
+POLICY_REQS_PER_DP="${PRIME_OPD_POLICY_REQS_PER_DP:-6}"
+POLICY_MAX_NUM_SEQS_DEFAULT="${POLICY_REQS_PER_DP}"
 POLICY_MAX_NUM_SEQS="${PRIME_OPD_POLICY_MAX_NUM_SEQS:-${POLICY_MAX_NUM_SEQS_DEFAULT}}"
 NODE_PORT_OFFSET=0
 if [[ "${NODE_LABEL}" =~ ^[0-9]+$ ]]; then
@@ -944,7 +948,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_api_server_count "${PRIME_OPD_TEACHER_VLLM_API_SERVER_COUNT:-1}" \
       --prime_opd_teacher_vllm_data_parallel_rpc_port "${TEACHER_DP_RPC_PORT}" \
       --prime_opd_teacher_vllm_use_deep_gemm "${PRIME_OPD_TEACHER_USE_DEEP_GEMM:-false}" \
-      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-4}" \
+      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-1}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
       --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-${TEACHER_VLLM_EXTRA_DEFAULT}}"
@@ -1038,7 +1042,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_api_server_count "${PRIME_OPD_TEACHER_VLLM_API_SERVER_COUNT:-1}" \
       --prime_opd_teacher_vllm_data_parallel_rpc_port "${TEACHER_DP_RPC_PORT}" \
       --prime_opd_teacher_vllm_use_deep_gemm "${PRIME_OPD_TEACHER_USE_DEEP_GEMM:-false}" \
-      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-4}" \
+      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-1}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
       --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-${TEACHER_VLLM_EXTRA_DEFAULT}}"
