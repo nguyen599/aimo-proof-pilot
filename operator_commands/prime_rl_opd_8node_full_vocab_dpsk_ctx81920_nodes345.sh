@@ -302,16 +302,15 @@ export NCCL_CROSS_NIC="${NCCL_CROSS_NIC:-1}"
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 export VLLM_ALLOW_INSECURE_SERIALIZATION="${VLLM_ALLOW_INSECURE_SERIALIZATION:-1}"
 # DeepSeek-V4-Flash + MARLIN MoE has hit allocator asserts during vLLM's
-# breakable CUDA graph profiling in Prime-RL worker mode. Explicitly opting out
-# keeps the normal non-eager vLLM compile/cudagraph path, matching the standalone
-# vllm serve baseline for this checkpoint.
+# breakable CUDA graph profiling in Prime-RL worker mode. vLLM auto-enables that
+# mode when this variable is absent, so an explicit zero is required to keep the
+# normal non-eager compile/cudagraph path used by the standalone baseline.
 case "${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}" in
-  0 | false | False | FALSE | no | No | NO | off | Off | OFF)
-    # vLLM checks variable presence rather than parsing its boolean value.
-    unset VLLM_USE_BREAKABLE_CUDAGRAPH
+  1 | true | True | TRUE | yes | Yes | YES | on | On | ON)
+    export VLLM_USE_BREAKABLE_CUDAGRAPH=1
     ;;
   *)
-    export VLLM_USE_BREAKABLE_CUDAGRAPH
+    export VLLM_USE_BREAKABLE_CUDAGRAPH=0
     ;;
 esac
 # The DeepSeek-V4 sparse MLA startup warmup can fail with an invalid resource
