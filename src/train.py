@@ -175,8 +175,92 @@ DEFAULT_VERL_NVIDIA_RUNTIME_REQUIREMENTS = (
     # ncclCommQueryProperties symbol, which is present in NCCL 2.29.3.
     f"nvidia-nccl-{DEFAULT_CUDA_PACKAGE_FAMILY}==2.29.3",
 )
-DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS: tuple[str, ...] = ()
-DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS: tuple[str, ...] = ()
+# The current container image includes this stack, but older SIF images do not.
+# Keep a runtime fallback so train.py remains self-contained when the host starts
+# an older image and fetches the current submission repository at launch.
+DEFAULT_PRIME_RL_SOURCE_REQUIREMENTS = (
+    # pip does not understand prime-rl's [tool.uv.sources], so direct source
+    # dependencies need to be supplied explicitly when installing with pip.
+    "torchtitan @ git+https://github.com/pytorch/torchtitan.git@a1fdd7e",
+    "dion @ git+https://github.com/samsja/dion.git@d891eeb",
+    (
+        "deep-ep @ "
+        "https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/"
+        "deep_ep-1.2.1+29d31c0-cp312-cp312-linux_x86_64.whl"
+    ),
+    (
+        "deep-gemm @ "
+        "https://github.com/PrimeIntellect-ai/prime-rl/releases/download/v0.5.0/"
+        "deep_gemm-2.5.0+891d57b-cp312-cp312-linux_x86_64.whl"
+    ),
+    (
+        "magi-attention @ git+https://github.com/SandAI-org/MagiAttention.git@"
+        "efaabdbcbc53928debf2fcde189c45d6646210c6"
+    ),
+    (
+        "magi-attn-extensions @ git+https://github.com/SandAI-org/MagiAttention.git@"
+        "efaabdbcbc53928debf2fcde189c45d6646210c6#subdirectory=extensions"
+    ),
+)
+DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
+    # The pinned vLLM wheel is installed separately with --no-deps. These are
+    # the Python-side dependencies required by Prime-RL and that wheel on the
+    # older SIF image. Keep torch/CUDA packages out of this overlay.
+    "graphql-core>=3.2.0",
+    "beartype>=0.21.0",
+    "datasets>=4.0.0",
+    "transformers==5.13.0",
+    "sentencepiece",
+    "tiktoken",
+    "wandb>=0.26.1",
+    "wandb-workspaces>=0.4.3",
+    "nltk>=3.9.1",
+    "jaxtyping>=0.3.2",
+    "loguru>=0.7.3",
+    "pyarrow>=21.0.0",
+    "pyzmq>=27.1.0",
+    "aiolimiter>=1.2.1",
+    "tenacity>=8.2.0",
+    "openai>=1.106.1",
+    "orjson>=3.11.0",
+    "rich>=14.0.0",
+    "setproctitle>=1.3.0",
+    "uvloop>=0.21.0",
+    "nvidia-ml-py>=12.575.51",
+    "pybase64>=1.4.2",
+    "pandas>=2.0",
+    "msgspec>=0.18",
+    "tomli-w>=1.2.0",
+    # The vendored Verifiers package imports SandboxMixin while loading legacy
+    # environments, even when the selected environment does not use a sandbox.
+    "prime-sandboxes>=0.2.27",
+    "weave",
+    # vLLM imports these from its optional Python dependency set. In
+    # particular, gguf avoids an import failure when an old image lacks it.
+    "gguf>=0.17.0",
+    "compressed-tensors==0.15.0.1",
+    "diskcache==5.6.3",
+    "ijson",
+    "llguidance>=1.3.0,<1.4.0",
+    "lm-format-enforcer==0.11.3",
+    "mistral_common[image]>=1.11.2",
+    "pydantic-extra-types>=2.10.0",
+    "pycountry>=24.6.1",
+    "model-hosting-container-standards>=0.1.14,<1.0.0",
+    "opentelemetry-semantic-conventions-ai>=0.4.1",
+    "outlines_core==0.2.11",
+    "partial-json-parser",
+    "distlib",
+    "fastapi<0.137",
+    "prometheus-fastapi-instrumentator>=7.0.0",
+    "python-json-logger",
+    "tokenspeed-mla==0.1.2",
+    "xgrammar>=0.2.0,<1.0.0",
+    # MagiAttention extensions currently import an optional DSA test helper
+    # from package __init__, which assumes these NGC image utilities exist.
+    "debugpy>=1.8.0",
+    "expecttest>=0.3.0",
+)
 PROTECTED_RUNTIME_OVERLAY_PACKAGES = (
     "flash_attn",
     "functorch",
