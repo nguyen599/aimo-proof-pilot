@@ -1205,7 +1205,8 @@ def build_distributed_trainer_command(args: argparse.Namespace, trainer_config_p
         "--rdzv-conf",
         (
             f"timeout={args.prime_trainer_rdzv_timeout},"
-            f"read_timeout={args.prime_trainer_rdzv_timeout}"
+            f"read_timeout={args.prime_trainer_rdzv_timeout},"
+            f"is_host={'true' if args.prime_trainer_node_rank == 0 else 'false'}"
         ),
         "-m",
         "prime_rl.trainer.rl.train",
