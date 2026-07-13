@@ -367,6 +367,8 @@ def write_prime_rl_config(path: Path, config: dict[str, Any]) -> None:
         write_toml_lines(lines, "weight_broadcast", config["weight_broadcast"])
     if config.get("wandb"):
         write_toml_lines(lines, "wandb", config["wandb"])
+    if config.get("trainer"):
+        write_toml_lines(lines, "trainer", config["trainer"])
     write_toml_lines(lines, "trainer.model", config["trainer_model"])
     write_toml_lines(lines, "trainer.optim", config["trainer_optim"])
     write_toml_lines(lines, "trainer.scheduler", config["trainer_scheduler"])
@@ -417,13 +419,18 @@ def write_prime_rl_config(path: Path, config: dict[str, Any]) -> None:
 
 def write_prime_trainer_config(path: Path, config: dict[str, Any]) -> None:
     lines: list[str] = []
+    trainer_root = {
+        "output_dir": config["root"]["output_dir"],
+        "max_steps": config["root"]["max_steps"],
+    }
+    if config.get("trainer", {}).get("policy_mismatch_kl_abort_threshold") is not None:
+        trainer_root["policy_mismatch_kl_abort_threshold"] = config["trainer"][
+            "policy_mismatch_kl_abort_threshold"
+        ]
     write_toml_lines(
         lines,
         None,
-        {
-            "output_dir": config["root"]["output_dir"],
-            "max_steps": config["root"]["max_steps"],
-        },
+        trainer_root,
     )
     write_toml_lines(lines, "log", config["log"])
     write_toml_lines(lines, "model", config["trainer_model"])
@@ -919,6 +926,9 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
         },
         "weight_broadcast": weight_broadcast,
         "wandb": wandb_config,
+        "trainer": {
+            "policy_mismatch_kl_abort_threshold": args.prime_policy_mismatch_kl_abort_threshold,
+        },
         "trainer_model": {
             "name": args.model_path,
             "seq_len": args.max_seq_length,
@@ -1795,6 +1805,15 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_trainer_context_parallel_size", "--prime_trainer_cp", type=int, default=1)
     parser.add_argument("--prime_trainer_cp_style", default="ulysses", choices=("ring", "ulysses"))
     parser.add_argument("--prime_trainer_fp8", type=parse_bool, default=False)
+    parser.add_argument(
+        "--prime_policy_mismatch_kl_abort_threshold",
+        type=float,
+        default=None,
+        help=(
+            "Abort the Prime-RL trainer before backward when trainer-policy mismatch KL "
+            "exceeds this value. The check runs on every microbatch."
+        ),
+    )
     parser.add_argument(
         "--prime_trainer_compile",
         type=parse_bool,

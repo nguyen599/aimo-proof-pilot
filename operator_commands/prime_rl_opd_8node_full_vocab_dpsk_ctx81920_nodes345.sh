@@ -563,7 +563,10 @@ echo "[prime-opd-3node] train_ip=${TRAIN_IP}"
 echo "[prime-opd-3node] policy_base_url=${POLICY_BASE_URL}"
 echo "[prime-opd-3node] teacher_base_url=${TEACHER_BASE_URL}"
 
-if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-0}" == "1" ]]; then
+# A trainer starts from MODEL_PATH at policy version 0. Reusing policy servers
+# from another run can silently compare against stale or partially reloaded
+# weights, so real launches clean only Prime-RL/vLLM role processes by default.
+if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-1}" == "1" ]]; then
   echo "[prime-opd-3node] cleaning stale Prime-RL/vLLM processes on role node ${NODE_LABEL}"
   pkill -9 -f "[p]ython.*prime_rl" 2>/dev/null || true
   pkill -9 -f "[t]orchrun.*prime_rl" 2>/dev/null || true
@@ -909,6 +912,7 @@ COMMON_ARGS=(
   --prime_trainer_fsdp_cpu_offload false
   --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
   --prime_trainer_fp8 "${PRIME_TRAINER_FP8:-true}"
+  --prime_policy_mismatch_kl_abort_threshold "${PRIME_POLICY_MISMATCH_KL_ABORT_THRESHOLD:-1.0}"
   # Real runs compile every decoder layer for higher steady-state throughput.
   # Short transport/debug smokes may export PRIME_TRAINER_COMPILE=false to
   # avoid paying the first-step compilation warm-up.
