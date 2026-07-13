@@ -313,7 +313,10 @@ export VLLM_SKIP_DEEPSEEK_V4_SPARSE_MLA_WARMUP="${VLLM_SKIP_DEEPSEEK_V4_SPARSE_M
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-olmo3-prime-rl-full-vocab}"
-export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENCY:-1}"
+# Teacher inference owns a full eight-GPU node. Match the scorer client to the
+# engine's 16-request capacity; CPU parameter offload remains disabled unless
+# PRIME_OPD_TEACHER_CPU_OFFLOAD_GB is set explicitly.
+export PRIME_RL_PREFILL_HIDDEN_CONCURRENCY="${PRIME_RL_PREFILL_HIDDEN_CONCURRENCY:-16}"
 export PRIME_RL_PREFILL_HIDDEN_RETRY_TIMEOUT_SECONDS="${PRIME_RL_PREFILL_HIDDEN_RETRY_TIMEOUT_SECONDS:-1200}"
 export PRIME_RL_TEACHER_INFERENCE_MAX_RESTARTS="${PRIME_RL_TEACHER_INFERENCE_MAX_RESTARTS:-3}"
 export PRIME_RL_TEACHER_INFERENCE_RESTART_DELAY_SECONDS="${PRIME_RL_TEACHER_INFERENCE_RESTART_DELAY_SECONDS:-10}"
@@ -948,7 +951,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_api_server_count "${PRIME_OPD_TEACHER_VLLM_API_SERVER_COUNT:-1}" \
       --prime_opd_teacher_vllm_data_parallel_rpc_port "${TEACHER_DP_RPC_PORT}" \
       --prime_opd_teacher_vllm_use_deep_gemm "${PRIME_OPD_TEACHER_USE_DEEP_GEMM:-false}" \
-      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-1}" \
+      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-16}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
       --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-${TEACHER_VLLM_EXTRA_DEFAULT}}"
@@ -1042,7 +1045,7 @@ case "${PRIME_COMPONENT_ROLE}" in
       --prime_opd_teacher_vllm_api_server_count "${PRIME_OPD_TEACHER_VLLM_API_SERVER_COUNT:-1}" \
       --prime_opd_teacher_vllm_data_parallel_rpc_port "${TEACHER_DP_RPC_PORT}" \
       --prime_opd_teacher_vllm_use_deep_gemm "${PRIME_OPD_TEACHER_USE_DEEP_GEMM:-false}" \
-      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-1}" \
+      --prime_opd_teacher_vllm_max_num_seqs "${PRIME_OPD_TEACHER_MAX_NUM_SEQS:-16}" \
       --prime_opd_teacher_vllm_max_num_batched_tokens "${TEACHER_BATCHED_TOKENS}" \
       --prime_opd_teacher_vllm_reasoning_parser deepseek_v4 \
       --prime_opd_teacher_vllm_extra "${PRIME_OPD_TEACHER_VLLM_EXTRA:-${TEACHER_VLLM_EXTRA_DEFAULT}}"
