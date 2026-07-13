@@ -569,7 +569,7 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-0
   pkill -9 -f "[t]orchrun.*prime_rl" 2>/dev/null || true
   # Prime-RL rewrites trainer worker process titles, so their command lines no
   # longer match the python/torchrun patterns after a parent exits.
-  ps -eo pid=,comm= \
+  ps -eo pid=,args= \
     | awk '$2 == "PRIME-RL::Trainer" {print $1}' \
     | xargs -r kill -9 2>/dev/null || true
   pkill -9 -f "[v]llm" 2>/dev/null || true
