@@ -585,10 +585,10 @@ OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${TMP_ROOT}/output}"
 LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${TMP_ROOT}/logs}"
 CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME}_${PRIME_COMPONENT_ROLE}}"
 
-# H200 production profile. The B200 Beaker template can override these with
-# its 131k/133120 values; H200 keeps enough headroom for 65k-token rollouts.
-CTX_LEN="${PRIME_OPD_CTX_LEN:-81920}"
-VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-90112}"
+# Match the Beaker production shape. Completion remains below the context limit
+# so prompts and generated traces retain headroom in both policy and teacher.
+CTX_LEN="${PRIME_OPD_CTX_LEN:-131072}"
+VLLM_CTX_LEN="${PRIME_OPD_VLLM_MAX_MODEL_LEN:-133120}"
 TEACHER_VLLM_CTX_LEN="${PRIME_OPD_TEACHER_VLLM_MAX_MODEL_LEN:-${VLLM_CTX_LEN}}"
 OPD_DISTILL_MODE="${PRIME_OPD_DISTILL_MODE:-token_logprobs}"
 COMPLETION_TOKENS="${PRIME_OPD_COMPLETION_TOKENS:-65000}"
