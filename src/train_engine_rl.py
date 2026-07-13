@@ -1203,7 +1203,10 @@ def build_distributed_trainer_command(args: argparse.Namespace, trainer_config_p
         "--rdzv-id",
         rdzv_id,
         "--rdzv-conf",
-        f"timeout={args.prime_trainer_rdzv_timeout}",
+        (
+            f"timeout={args.prime_trainer_rdzv_timeout},"
+            f"read_timeout={args.prime_trainer_rdzv_timeout}"
+        ),
         "-m",
         "prime_rl.trainer.rl.train",
         "@",
