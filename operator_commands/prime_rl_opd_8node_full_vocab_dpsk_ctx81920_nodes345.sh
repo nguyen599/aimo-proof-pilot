@@ -410,7 +410,14 @@ export TORCHINDUCTOR_CACHE_DIR="${TMP_ROOT}/torchinductor"
 export RAY_TMPDIR="${TMP_ROOT}/ray"
 export VLLM_CACHE_ROOT="${TMP_ROOT}/vllm"
 export UV_CACHE_DIR="${TMP_ROOT}/uv"
-export VLLM_RPC_BASE_PATH="${TMP_ROOT}/rpc"
+# vLLM's data-parallel coordinator creates Unix sockets directly below this
+# directory.  ``TMP_ROOT`` includes the descriptive run name and can exceed
+# Linux's 107-byte sockaddr_un limit once vLLM appends a UUID.  Keep the IPC
+# root short, but derive it from the run name and local role so concurrent runs
+# on a shared node do not collide.
+VLLM_RPC_RUN_ID="$(printf '%s' "${RUN_NAME}" | sha256sum | cut -c1-12)"
+VLLM_RPC_NODE_ID="${NODE_LABEL}_${PRIME_COMPONENT_ROLE}"
+export VLLM_RPC_BASE_PATH="${PRIME_VLLM_RPC_BASE_PATH:-/tmp/vllm-rpc/${VLLM_RPC_RUN_ID}-${VLLM_RPC_NODE_ID}}"
 export FLASHINFER_WORKSPACE_BASE="${TMP_ROOT}/flashinfer"
 export FLASHINFER_CUBIN_DIR="${TMP_ROOT}/flashinfer/.cache/flashinfer/cubins"
 export DG_JIT_CACHE_DIR="${DG_JIT_CACHE_DIR:-${TMP_ROOT}/deep_gemm}"
