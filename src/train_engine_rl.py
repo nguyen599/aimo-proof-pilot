@@ -516,6 +516,7 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
             )
         dataset_mode = str(args.prime_proof_dataset_mode).strip().lower()
         single_turn_mode = dataset_mode in {"single", "single_turn", "per_turn"}
+        hybrid_mode = dataset_mode in {"hybrid", "single_and_multi", "mixed_turns"}
         refine_rounds = args.prime_proof_refine_rounds
         if args.prime_algorithm == "opd" and refine_rounds == 0 and not single_turn_mode:
             refine_rounds = 1
@@ -527,6 +528,17 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError(
                 "--prime_proof_candidate_gate is incompatible with "
                 "--prime_proof_dataset_mode single."
+            )
+        if hybrid_mode and not args.prime_proof_multi_turn_dataset_path:
+            raise ValueError(
+                "--prime_proof_multi_turn_dataset_path is required with "
+                "--prime_proof_dataset_mode hybrid."
+            )
+        if not 0.0 <= args.prime_proof_multi_turn_fraction <= 1.0:
+            raise ValueError("--prime_proof_multi_turn_fraction must be in [0, 1].")
+        if not 0.0 <= args.prime_proof_multi_turn_continue_fraction <= 1.0:
+            raise ValueError(
+                "--prime_proof_multi_turn_continue_fraction must be in [0, 1]."
             )
         if args.prime_proof_candidate_gate:
             if args.prime_group_size <= 1:
@@ -543,6 +555,9 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
             "args": {
                 "dataset_path": dataset_path,
                 "dataset_mode": dataset_mode,
+                "multi_turn_dataset_path": args.prime_proof_multi_turn_dataset_path,
+                "multi_turn_fraction": args.prime_proof_multi_turn_fraction,
+                "multi_turn_continue_fraction": args.prime_proof_multi_turn_continue_fraction,
                 "problem_column": args.prime_proof_problem_column,
                 "solution_column": args.prime_proof_solution_column,
                 "max_examples": args.prime_proof_max_examples,
@@ -558,6 +573,7 @@ def build_prime_env_config(args: argparse.Namespace) -> dict[str, Any]:
                 "refine_review_n": args.prime_proof_refine_review_n,
                 "refine_early_stop_reward": args.prime_proof_refine_early_stop_reward,
                 "selector_top_k": args.prime_proof_selector_top_k,
+                "selector_enabled": args.prime_proof_enable_selector,
                 "candidate_gate_enabled": args.prime_proof_candidate_gate,
                 "candidate_continue_count": args.prime_proof_candidate_continue_count,
             },
@@ -1592,10 +1608,28 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_math_min_avg_reward", type=float, default=None)
     parser.add_argument("--prime_math_max_avg_reward", type=float, default=None)
     parser.add_argument("--prime_proof_dataset_path", default=None)
+    parser.add_argument("--prime_proof_multi_turn_dataset_path", default=None)
     parser.add_argument(
         "--prime_proof_dataset_mode",
         default="mixed",
-        choices=("mixed", "single", "single_turn", "per_turn", "verifiable", "verifiable_eval", "eval_verifiable"),
+        choices=(
+            "mixed",
+            "single",
+            "single_turn",
+            "per_turn",
+            "hybrid",
+            "single_and_multi",
+            "mixed_turns",
+            "verifiable",
+            "verifiable_eval",
+            "eval_verifiable",
+        ),
+    )
+    parser.add_argument("--prime_proof_multi_turn_fraction", type=float, default=0.2)
+    parser.add_argument(
+        "--prime_proof_multi_turn_continue_fraction",
+        type=float,
+        default=0.25,
     )
     parser.add_argument("--prime_proof_problem_column", default="auto")
     parser.add_argument("--prime_proof_solution_column", default="auto")
@@ -1629,6 +1663,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_proof_refine_reward_mode", default="selected", choices=("selected", "best", "final"))
     parser.add_argument("--prime_proof_refine_early_stop_reward", type=float, default=0.95)
     parser.add_argument("--prime_proof_selector_top_k", type=int, default=3)
+    parser.add_argument("--prime_proof_enable_selector", type=parse_bool, default=True)
     parser.add_argument("--prime_proof_candidate_gate", type=parse_bool, default=False)
     parser.add_argument("--prime_proof_candidate_continue_count", type=int, default=4)
     parser.add_argument("--prime_eval_verifiable_dataset_path", default=None)

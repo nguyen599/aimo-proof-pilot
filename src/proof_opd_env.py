@@ -937,6 +937,7 @@ def normalize_single_turn_dataset_rows(
         info = {
             "stage": stage,
             "task_type": "opd_single_turn",
+            "execution_mode": "single_turn",
             "task_id": task_id,
             "source_index": source_index,
             "pipeline": cell_to_text(row.get("pipeline")),
@@ -978,6 +979,54 @@ def normalize_single_turn_dataset_rows(
         skipped_stages,
     )
     return normalized
+
+
+def normalize_hybrid_dataset_rows(
+    single_turn_rows: list[dict[str, Any]],
+    multi_turn_rows: list[dict[str, Any]],
+    *,
+    problem_column: str,
+    solution_column: str,
+    max_examples: int | None,
+    multi_turn_fraction: float = 0.2,
+    mix_seed: int = DEFAULT_MIX_SEED,
+) -> list[dict[str, Any]]:
+    """Mix pre-rendered one-turn prompts with generated multi-turn proof tasks."""
+
+    single_normalized = normalize_single_turn_dataset_rows(
+        single_turn_rows,
+        max_examples=None,
+    )
+    multi_normalized = normalize_dataset_rows(
+        multi_turn_rows,
+        problem_column=problem_column,
+        solution_column=solution_column,
+        max_examples=None,
+        task_type="proof",
+        dataset_label="proof_math",
+    )
+    for row in multi_normalized:
+        info = dict(json_loads_maybe(row.get("info")) or {})
+        info["execution_mode"] = "multi_turn"
+        row["info"] = info
+
+    final_count = (
+        max_examples
+        if max_examples is not None and max_examples > 0
+        else len(single_normalized)
+    )
+    fraction = max(0.0, min(1.0, float(multi_turn_fraction)))
+    multi_count = int(round(final_count * fraction))
+    if fraction > 0.0 and multi_count == 0 and final_count > 0:
+        multi_count = 1
+    multi_count = min(final_count, multi_count)
+    single_count = final_count - multi_count
+    mixed = _take_rows(single_normalized, single_count) + _take_rows(
+        multi_normalized,
+        multi_count,
+    )
+    random.Random(int(mix_seed)).shuffle(mixed)
+    return mixed
 
 
 def _clone_dataset_row(row: dict[str, Any], repeat_index: int = 0) -> dict[str, Any]:
@@ -1191,9 +1240,20 @@ class ProofOPDSingleTurnEnv(vf.SingleTurnEnv):
         info["finish_reason"] = finish_reason
         info["problem"] = clipped_trace_text(state.get("problem", ""))
         info["proof_opd_trace"] = {
+            "stage": stage,
             "source_index": info.get("source_index") or state.get("source_index"),
             "is_truncated": is_truncated,
+            "finish_reason": finish_reason,
             "raw_output_excerpt": clipped_trace_text(raw_output),
+            "stage_records": [
+                {
+                    "stage": stage,
+                    "raw_chars": len(raw_output),
+                    "raw_output_excerpt": clipped_trace_text(raw_output),
+                    "is_truncated": is_truncated,
+                    "finish_reason": finish_reason,
+                }
+            ],
         }
         state["info"] = info
 
@@ -1217,6 +1277,9 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         partial_format_score: float = 0.7,
         refine_early_stop_reward: float = 0.95,
         selector_top_k: int = 3,
+        selector_enabled: bool | str = True,
+        multi_turn_continue_fraction: float = 0.25,
+        routing_seed: int = DEFAULT_MIX_SEED,
         require_closed_think: bool | str = True,
         candidate_gate_enabled: bool | str = False,
         candidate_continue_count: int = 4,
@@ -1229,6 +1292,12 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         self.partial_format_score = clamp01(float(partial_format_score))
         self.refine_early_stop_reward = clamp01(float(refine_early_stop_reward))
         self.selector_top_k = max(1, int(selector_top_k))
+        self.selector_enabled = parse_bool(selector_enabled, True)
+        self.multi_turn_continue_fraction = max(
+            0.0,
+            min(1.0, float(multi_turn_continue_fraction)),
+        )
+        self._routing_rng = random.Random(int(routing_seed))
         self.require_closed_think = parse_bool(require_closed_think, True)
         self.candidate_gate_enabled = parse_bool(candidate_gate_enabled, False)
         self.candidate_continue_count = max(1, int(candidate_continue_count))
@@ -1248,7 +1317,11 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         model: str,
         sampling_args: Any,
     ) -> list[Any]:
-        if not self.candidate_gate_enabled or len(group_inputs) <= 1:
+        if (
+            not self.candidate_gate_enabled
+            or len(group_inputs) <= 1
+            or self._input_is_single_turn(group_inputs[0])
+        ):
             return await super()._run_group_states(group_inputs, client, model, sampling_args)
 
         group_id = uuid.uuid4().hex
@@ -1300,7 +1373,19 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             self._candidate_gate_groups.pop(group_id, None)
 
     async def setup_state(self, state: vf.State) -> None:
-        state["proof_opd_stage"] = "proof"
+        info = self._input_info(state)
+        is_single_turn = self._input_is_single_turn(state.get("input", {}))
+        is_hybrid_multi_turn = str(info.get("execution_mode") or "").lower() == "multi_turn"
+        continue_pipeline = (
+            self._routing_rng.random() < self.multi_turn_continue_fraction
+            if is_hybrid_multi_turn
+            else True
+        )
+        state["proof_opd_single_turn"] = is_single_turn
+        state["proof_opd_continue_pipeline"] = continue_pipeline
+        state["proof_opd_stage"] = (
+            str(info.get("stage") or "single").lower() if is_single_turn else "proof"
+        )
         state["proof_opd_current_round"] = 0
         state["proof_opd_rounds"] = []
         state["proof_opd_stage_records"] = []
@@ -1310,10 +1395,15 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         state["proof_opd_selector_candidates"] = []
         state["proof_opd_selector"] = None
         state["proof_opd_reward_payload"] = None
-        info = self._input_info(state)
         state["proof_opd_question_sequence"] = int(
             info.get("question_sequence", self._question_sequence)
         )
+        if is_hybrid_multi_turn:
+            self._update_input_info(
+                state,
+                multi_turn_continue_pipeline=continue_pipeline,
+                multi_turn_continue_fraction=self.multi_turn_continue_fraction,
+            )
 
     async def get_model_response(
         self,
@@ -1364,6 +1454,16 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         info = state.get("input", {}).get("info") if isinstance(state, dict) else None
         info = json_loads_maybe(info)
         return dict(info) if isinstance(info, dict) else {}
+
+    @staticmethod
+    def _input_is_single_turn(input_row: Any) -> bool:
+        if not isinstance(input_row, dict):
+            return False
+        info = json_loads_maybe(input_row.get("info"))
+        info = info if isinstance(info, dict) else {}
+        task_type = str(input_row.get("task_type") or info.get("task_type") or "").lower()
+        execution_mode = str(info.get("execution_mode") or "").lower()
+        return task_type == "opd_single_turn" or execution_mode == "single_turn"
 
     def _update_input_info(self, state: vf.State, **updates: Any) -> None:
         input_row = state.get("input")
@@ -1623,6 +1723,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         failed: bool = False,
         wait_for_group: bool = True,
     ) -> tuple[bool, list[dict[str, Any]]] | None:
+        if not getattr(self, "selector_enabled", True):
+            return None
         info = self._input_info(state)
         group_id = str(info.get("candidate_group_id") or "")
         if not self.candidate_gate_enabled or not group_id or not info.get("candidate_selected"):
@@ -1668,6 +1770,8 @@ class ProofOPDEnv(vf.MultiTurnEnv):
 
     @vf.cleanup(priority=40)
     async def release_group_selector_on_failed_rollout(self, state: vf.State) -> None:
+        if not getattr(self, "selector_enabled", True):
+            return
         if state.get("proof_opd_group_selector_submitted"):
             return
         info = self._input_info(state)
@@ -1794,6 +1898,9 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "task_id": info.get("task_id") or self._input_value(state, "task_id"),
             "source_index": info.get("source_index") or self._input_value(state, "source_index"),
             "task_type": payload.get("task_type") or info.get("task_type") or self._input_value(state, "task_type"),
+            "execution_mode": info.get("execution_mode"),
+            "multi_turn_continue_pipeline": info.get("multi_turn_continue_pipeline"),
+            "multi_turn_continue_fraction": info.get("multi_turn_continue_fraction"),
             "candidate_group_id": info.get("candidate_group_id"),
             "candidate_group_size": info.get("candidate_group_size"),
             "candidate_index": info.get("candidate_index"),
@@ -1804,7 +1911,6 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "candidate_selection_self_score": info.get("candidate_selection_self_score"),
             "candidate_selection_mean_logprob": info.get("candidate_selection_mean_logprob"),
             "problem": clipped_trace_text(self._problem(state)),
-            "reward": payload.get("reward", 0.0),
             "format_score": payload.get("format_score", 0.0),
             "format_ok": payload.get("format_ok", False),
             "proof_score": payload.get("proof_score"),
@@ -2211,6 +2317,17 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         state["proof_opd_pending_verifier_result"] = None
 
     async def _finish_candidate(self, state: vf.State, payload: dict[str, Any]) -> vf.Messages:
+        if not getattr(self, "selector_enabled", True):
+            payload.update(
+                {
+                    "selector_valid": False,
+                    "selector_fallback_used": False,
+                    "selector_invalid_reason": "disabled",
+                }
+            )
+            state["proof_opd_reward_payload"] = payload
+            return self._stop(state)
+
         group_result = await self._submit_group_selector_record(state)
         if group_result is not None:
             is_leader, candidates = group_result
@@ -2258,6 +2375,35 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         problem = self._problem(state)
         round_idx = int(state.get("proof_opd_current_round", 0))
 
+        if state.get("proof_opd_single_turn"):
+            parsed = {
+                "raw_output": text,
+                "raw_chars": len(text),
+                "closed_thinking": has_closed_thinking(text),
+            }
+            self._record_stage(
+                state,
+                stage=stage,
+                parsed=parsed,
+                is_truncated=is_truncated,
+                finish_reason=finish_reason,
+            )
+            state["proof_opd_reward_payload"] = {
+                "reward": 0.0,
+                "format_score": 0.0,
+                "proof_score": 0.0,
+                "meta_score": 0.0,
+                "selected_round_index": -1,
+                "selector_valid": False,
+                "reason": "single_turn_complete",
+                "stage": stage,
+                "finish_reason": finish_reason,
+                "is_truncated": is_truncated,
+                "generation_raw_output": text,
+                "stage_records": list(state.get("proof_opd_stage_records") or []),
+            }
+            return self._stop(state)
+
         if stage in {"proof", "refine"}:
             parsed = parse_generation_response(text)
             state["proof_opd_generation"] = parsed
@@ -2304,6 +2450,27 @@ class ProofOPDEnv(vf.MultiTurnEnv):
                 state["proof_opd_reward_payload"] = payload
                 LOGGER.info(
                     "Proof-OPD candidate stopped after proof-only stage: %s",
+                    json.dumps(payload, ensure_ascii=False)[:4000],
+                )
+                return self._stop(state)
+            if stage == "proof" and not state.get("proof_opd_continue_pipeline", True):
+                payload = self._proof_only_candidate_payload(
+                    state,
+                    parsed,
+                    is_truncated=is_truncated,
+                    finish_reason=finish_reason,
+                )
+                payload.update(
+                    {
+                        "reason": "sampled_proof_only",
+                        "candidate_selected": None,
+                        "multi_turn_continue_pipeline": False,
+                    }
+                )
+                state.setdefault("proof_opd_rounds", []).append(payload)
+                state["proof_opd_reward_payload"] = payload
+                LOGGER.info(
+                    "Proof-OPD sample stopped after randomized proof-only route: %s",
                     json.dumps(payload, ensure_ascii=False)[:4000],
                 )
                 return self._stop(state)
@@ -2476,8 +2643,12 @@ class ProofOPDEnv(vf.MultiTurnEnv):
 
     async def get_prompt_messages(self, state: vf.State) -> vf.Messages:
         if len(state.get("trajectory") or []) == 0:
-            state["proof_opd_stage"] = "proof"
-            log_llm_input("proof_generation", completion_to_text(state["prompt"]), state=state)
+            stage = str(state.get("proof_opd_stage") or "proof")
+            if state.get("proof_opd_single_turn"):
+                log_llm_input(f"single_{stage}", completion_to_text(state["prompt"]), state=state)
+            else:
+                state["proof_opd_stage"] = "proof"
+                log_llm_input("proof_generation", completion_to_text(state["prompt"]), state=state)
             return state["prompt"]
         return await self._advance_after_completion(state)
 
@@ -2490,6 +2661,13 @@ class ProofOPDEnv(vf.MultiTurnEnv):
         info = dict(self._input_info(state))
         if state.get("proof_opd_reward_payload") is not None:
             info["proof_opd_trace"] = self._build_wandb_trace(state)
+        if state.get("proof_opd_single_turn"):
+            trajectory = state.get("trajectory") or []
+            last_step = trajectory[-1] if trajectory else None
+            info["stage"] = str(state.get("proof_opd_stage") or info.get("stage") or "single")
+            info["token_counts"] = trajectory_step_token_counts(last_step)
+            info["finish_reason"] = trajectory_step_finish_reason(last_step)
+            info["problem"] = clipped_trace_text(state.get("problem", self._problem(state)))
         state["info"] = info
 
 
@@ -2607,6 +2785,9 @@ def load_environment(
     solution_column: str = "auto",
     max_examples: int | None = None,
     dataset_mode: str = "mixed",
+    multi_turn_dataset_path: str | None = None,
+    multi_turn_fraction: float = 0.2,
+    multi_turn_continue_fraction: float = 0.25,
     verifiable_dataset_path: str | None = None,
     verifiable_fraction: float = 0.2,
     verifiable_answer_column: str = "auto",
@@ -2619,12 +2800,14 @@ def load_environment(
     refine_review_n: int = 2,
     refine_early_stop_reward: float = 0.95,
     selector_top_k: int = 3,
+    selector_enabled: bool | str = True,
     candidate_gate_enabled: bool | str = False,
     candidate_continue_count: int = 4,
     **_: Any,
 ) -> vf.Environment:
     normalized_mode = str(dataset_mode or "mixed").strip().lower()
     use_single_turn = normalized_mode in {"single", "single_turn", "per_turn"}
+    use_hybrid = normalized_mode in {"hybrid", "single_and_multi", "mixed_turns"}
     use_verifiable_eval = normalized_mode in {"verifiable", "verifiable_eval", "eval_verifiable"}
     single_turn_columns = [
         "pipeline",
@@ -2638,9 +2821,21 @@ def load_environment(
     ]
     proof_rows = read_dataset_rows(
         dataset_path,
-        columns=single_turn_columns if use_single_turn else None,
+        columns=single_turn_columns if use_single_turn or use_hybrid else None,
     )
-    if use_single_turn:
+    if use_hybrid:
+        if not multi_turn_dataset_path:
+            raise ValueError("Hybrid Proof-OPD mode requires multi_turn_dataset_path.")
+        rows = normalize_hybrid_dataset_rows(
+            proof_rows,
+            read_dataset_rows(multi_turn_dataset_path),
+            problem_column=problem_column,
+            solution_column=solution_column,
+            max_examples=max_examples,
+            multi_turn_fraction=float(multi_turn_fraction),
+            mix_seed=int(mix_seed),
+        )
+    elif use_single_turn:
         rows = normalize_single_turn_dataset_rows(
             proof_rows,
             max_examples=max_examples,
@@ -2671,9 +2866,11 @@ def load_environment(
     for row in rows:
         task_counts[str(row.get("task_type") or "proof")] = task_counts.get(str(row.get("task_type") or "proof"), 0) + 1
     LOGGER.info(
-        "Loaded Proof-OPD dataset: mode=%s proof_path=%s verifiable_path=%s rows=%d task_counts=%s",
+        "Loaded Proof-OPD dataset: mode=%s proof_path=%s multi_turn_path=%s "
+        "verifiable_path=%s rows=%d task_counts=%s",
         normalized_mode,
         dataset_path,
+        multi_turn_dataset_path,
         verifiable_dataset_path,
         len(rows),
         task_counts,
@@ -2700,6 +2897,9 @@ def load_environment(
         require_closed_think=parse_bool(require_closed_think, True),
         refine_early_stop_reward=float(refine_early_stop_reward),
         selector_top_k=int(selector_top_k),
+        selector_enabled=parse_bool(selector_enabled, True),
+        multi_turn_continue_fraction=float(multi_turn_continue_fraction),
+        routing_seed=int(mix_seed),
         candidate_gate_enabled=(
             parse_bool(candidate_gate_enabled, False) and not use_verifiable_eval
         ),

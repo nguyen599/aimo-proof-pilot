@@ -91,6 +91,41 @@ def test_candidate_gate_is_forwarded_for_eight_member_groups() -> None:
     assert env["args"]["candidate_continue_count"] == 4
 
 
+def test_hybrid_proof_dataset_forwards_both_sources_and_disables_selector() -> None:
+    args = make_args(
+        "--prime_proof_dataset_path",
+        "/data/per_turn.parquet",
+        "--prime_proof_dataset_mode",
+        "hybrid",
+        "--prime_proof_multi_turn_dataset_path",
+        "/data/imo.csv",
+        "--prime_proof_multi_turn_fraction",
+        "0.25",
+        "--prime_proof_multi_turn_continue_fraction",
+        "0.25",
+        "--prime_group_size",
+        "1",
+        "--prime_proof_candidate_gate",
+        "false",
+        "--prime_proof_enable_selector",
+        "false",
+        "--prime_proof_refine_rounds",
+        "1",
+    )
+
+    config = build_prime_rl_config(args, Path("/tmp/output"))
+    env = config["train_envs"][0]
+
+    assert env["group_size"] == 1
+    assert env["args"]["dataset_mode"] == "hybrid"
+    assert env["args"]["multi_turn_dataset_path"] == "/data/imo.csv"
+    assert env["args"]["multi_turn_fraction"] == 0.25
+    assert env["args"]["multi_turn_continue_fraction"] == 0.25
+    assert env["args"]["candidate_gate_enabled"] is False
+    assert env["args"]["selector_enabled"] is False
+    assert env["args"]["refine_rounds"] == 1
+
+
 def test_inference_lm_heads_default_to_bfloat16_projection() -> None:
     args = make_args()
 

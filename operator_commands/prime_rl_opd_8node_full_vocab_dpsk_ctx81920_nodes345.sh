@@ -597,11 +597,11 @@ OPEN_INSTRUCT_RUNTIME_ROOT="${PRIME_3NODE_OPEN_INSTRUCT_RUNTIME_ROOT:-${RUNTIME_
 OLMO_CORE_RUNTIME_ROOT="${PRIME_3NODE_OLMO_CORE_RUNTIME_ROOT:-${RUNTIME_BASE}/OLMo-core}"
 VERL_RUNTIME_ROOT="${PRIME_3NODE_VERL_RUNTIME_ROOT:-${RUNTIME_BASE}/VERL}"
 PRIME_RL_RUNTIME_ROOT="${PRIME_3NODE_PRIME_RL_RUNTIME_ROOT:-${RUNTIME_BASE}/prime-rl}"
-# The current OPD corpus consists of pre-rendered one-turn proof, verifier,
-# selector, and refine prompts. Set PRIME_OPD_DATASET_PATH and
-# PRIME_PROOF_DATASET_MODE=mixed to return to the older IMO pipeline.
+# Hybrid training uses pre-rendered one-turn proof, verifier, selector, and
+# refine prompts together with generated multi-turn IMO trajectories.
 PER_TURN_DATASET_PATH="${PRIME_OPD_PER_TURN_DATASET_PATH:-/tmp/data/dsflash-proof-distill-v2-test/data/per_turn.parquet}"
 DATASET_PATH="${PRIME_OPD_DATASET_PATH:-${PER_TURN_DATASET_PATH}}"
+MULTI_TURN_DATASET_PATH="${PRIME_OPD_MULTI_TURN_DATASET_PATH:-${RUNTIME_ROOT}/data/imo_data_1959_2024.csv}"
 VERIFIABLE_DATASET_PATH="${PRIME_OPD_VERIFIABLE_DATASET_PATH:-${RUNTIME_ROOT}/data/astral-bench.csv}"
 EVAL_VERIFIABLE_DATASET_PATH="${PRIME_OPD_EVAL_VERIFIABLE_DATASET_PATH:-${RUNTIME_ROOT}/data/hmmt_feb_2026.csv}"
 LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${TMP_ROOT}/logs}"
@@ -635,15 +635,18 @@ BATCHED_TOKENS="${PRIME_OPD_BATCHED_TOKENS:-65536}"
 TEACHER_BATCHED_TOKENS="${PRIME_OPD_TEACHER_BATCHED_TOKENS:-4096}"
 MAX_STEPS="${MAX_TRAIN_STEPS:-1000}"
 BATCH_SIZE="${PRIME_BATCH_SIZE:-2}"
-PROOF_DATASET_MODE="${PRIME_PROOF_DATASET_MODE:-single}"
-if [[ "${PROOF_DATASET_MODE}" == "single" || "${PROOF_DATASET_MODE}" == "single_turn" || "${PROOF_DATASET_MODE}" == "per_turn" ]]; then
-  GROUP_SIZE="${PRIME_GROUP_SIZE:-1}"
-  CANDIDATE_GATE="${PRIME_PROOF_CANDIDATE_GATE:-false}"
-else
-  GROUP_SIZE="${PRIME_GROUP_SIZE:-2}"
-  CANDIDATE_GATE="${PRIME_PROOF_CANDIDATE_GATE:-true}"
-fi
-CANDIDATE_CONTINUE_COUNT="${PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-4}"
+PROOF_DATASET_MODE="${PRIME_PROOF_DATASET_MODE:-hybrid}"
+case "${PROOF_DATASET_MODE}" in
+  single|single_turn|per_turn|hybrid|single_and_multi|mixed_turns)
+    GROUP_SIZE="${PRIME_GROUP_SIZE:-1}"
+    CANDIDATE_GATE="${PRIME_PROOF_CANDIDATE_GATE:-false}"
+    ;;
+  *)
+    GROUP_SIZE="${PRIME_GROUP_SIZE:-2}"
+    CANDIDATE_GATE="${PRIME_PROOF_CANDIDATE_GATE:-true}"
+    ;;
+esac
+CANDIDATE_CONTINUE_COUNT="${PRIME_PROOF_CANDIDATE_CONTINUE_COUNT:-2}"
 PACKED_SEQUENCES_PER_STEP="${PRIME_PACKED_SEQUENCES_PER_STEP:-64}"
 TOKEN_BATCH_SIZE=$((CTX_LEN * PACKED_SEQUENCES_PER_STEP))
 INFLIGHT_PER_POLICY_NODE="${PRIME_OPD_INFLIGHT_ROLLOUTS_PER_POLICY_NODE:-48}"
@@ -655,7 +658,7 @@ if [[ -n "${PRIME_OPD_MAX_INFLIGHT_ROLLOUTS:-}" ]]; then
 else
   echo "[prime-opd-3node] max_inflight_rollouts=${MAX_INFLIGHT} (${INFLIGHT_PER_POLICY_NODE}/policy_node)"
 fi
-echo "[prime-opd-3node] proof_dataset_mode=${PROOF_DATASET_MODE} candidate_gate=${CANDIDATE_GATE} group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT}"
+echo "[prime-opd-3node] proof_dataset_mode=${PROOF_DATASET_MODE} candidate_gate=${CANDIDATE_GATE} group_size=${GROUP_SIZE} continue_after_proof=${CANDIDATE_CONTINUE_COUNT} randomized_multi_turn_continue_fraction=${PRIME_PROOF_MULTI_TURN_CONTINUE_FRACTION:-0.25}"
 if (( MAX_INFLIGHT_QUESTIONS > 0 )); then
   echo "[prime-opd-3node] max_inflight_questions=${MAX_INFLIGHT_QUESTIONS} (fresh questions pause at cap; continuation turns remain eligible)"
 fi
@@ -863,6 +866,9 @@ COMMON_ARGS=(
   --prime_env_name proof_math
   --prime_proof_dataset_path "${DATASET_PATH}"
   --prime_proof_dataset_mode "${PROOF_DATASET_MODE}"
+  --prime_proof_multi_turn_dataset_path "${MULTI_TURN_DATASET_PATH}"
+  --prime_proof_multi_turn_fraction "${PRIME_OPD_MULTI_TURN_FRACTION:-0.20}"
+  --prime_proof_multi_turn_continue_fraction "${PRIME_PROOF_MULTI_TURN_CONTINUE_FRACTION:-0.25}"
   --prime_proof_verifiable_dataset_path "${VERIFIABLE_DATASET_PATH}"
   --prime_proof_verifiable_fraction "${PRIME_OPD_VERIFIABLE_FRACTION:-0.20}"
   --prime_proof_verifiable_answer_column auto
@@ -873,9 +879,10 @@ COMMON_ARGS=(
   --prime_proof_max_examples "${PRIME_PROOF_MAX_EXAMPLES:-0}"
   --prime_proof_enable_meta_verification "${PRIME_PROOF_ENABLE_META_VERIFICATION:-true}"
   --prime_proof_num_verifiers "${PRIME_PROOF_NUM_VERIFIERS:-4}"
-  --prime_proof_refine_rounds "${PRIME_PROOF_REFINE_ROUNDS:-0}"
+  --prime_proof_refine_rounds "${PRIME_PROOF_REFINE_ROUNDS:-1}"
   --prime_proof_refine_review_n "${PRIME_PROOF_REFINE_REVIEW_N:-2}"
   --prime_proof_selector_top_k "${PRIME_PROOF_SELECTOR_TOP_K:-3}"
+  --prime_proof_enable_selector "${PRIME_PROOF_ENABLE_SELECTOR:-false}"
   --prime_proof_candidate_gate "${CANDIDATE_GATE}"
   --prime_proof_candidate_continue_count "${CANDIDATE_CONTINUE_COUNT}"
   --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}"

@@ -127,28 +127,27 @@ At startup, the script prints the proof dataset path, verifiable dataset path, v
 
 `src/proof_opd_env.py` implements the Prime-RL environment used by the command above. It is intentionally self-contained: it reads CSV/JSON/Parquet rows, builds prompts, tracks per-sample stage state, computes reward, and exposes W&B metrics through the Prime-RL rubric interface.
 
-Dataset workflow:
+Dataset workflow for the default `hybrid` mode:
 
-1. Load the proof dataset from `--prime_proof_dataset_path`.
-2. Load the optional verifiable dataset from `--prime_proof_verifiable_dataset_path`.
-3. Normalize proof rows into `task_type=proof` examples using `question`, `problem`, or the first user message.
-4. Normalize answerable rows as ordinary `task_type=proof` training examples, but add the boxed-answer instruction to their proof-generation prompt.
-5. Mix rows deterministically with `--prime_proof_verifiable_fraction` and `--prime_proof_mix_seed`. If the verifiable file is small, rows are repeated to preserve the requested fraction.
-6. Store only training-safe metadata in each row's `info` field. Gold answers are not kept in train rows; boxed-answer accuracy is measured only by the separate eval dataset.
+1. Load pre-rendered OPD prompts from `--prime_proof_dataset_path`. Rows must contain `messages_json` and stage `prove`, `verify`, `select`, or `refine`; `plain` and `meta` rows are excluded.
+2. Load multi-turn proof problems from `--prime_proof_multi_turn_dataset_path`, using `question`, `problem`, or the first user message as the problem text.
+3. Mark every row with `info.execution_mode`. A `single_turn` row uses its existing messages unchanged and stops after one model call. A `multi_turn` row enters the generated proof/verifier/meta/refine pipeline.
+4. Mix both sources deterministically with `--prime_proof_multi_turn_fraction` and `--prime_proof_mix_seed`. The smaller source is repeated as needed to preserve the requested fraction.
+5. Gold solutions may be present but are not required for OPD. Boxed-answer accuracy is measured only by the separate eval dataset.
 
 Runtime workflow:
 
-1. Prime starts one candidate group. The 8-node command defaults to `--prime_group_size 8`.
-2. All eight candidates generate one proof concurrently.
+1. Prime starts one independent rollout. The hybrid command defaults to `--prime_group_size 1`.
+2. Every multi-turn IMO row generates one proof.
 3. Parse each proof and require a closed `</think>` unless `--prime_proof_require_closed_think false` is used.
-4. With `--prime_proof_candidate_gate true`, rank the candidates by valid/closed format, format score, self-evaluation score, and mean completion log-probability. The best four continue; the other four stop with proof-only training traces.
+4. Sample the route independently for each valid proof. By default, `25%` continue and `75%` stop with a proof-only training trace; configure this with `--prime_proof_multi_turn_continue_fraction`.
 5. Run verifier prompts over the extracted proof.
 6. If verifier output is valid and its proof score is below `1`, run a meta-verifier prompt over the verifier analysis. A verifier score of `1` skips the meta call and uses a neutral meta multiplier of `1.0`.
 7. Compute `reward = format_score * average(verifier_score_i * meta_score_i)`, clamped to `[0, 1]`.
 8. Optionally run a refinement round when the selected reward is below `--prime_proof_refine_early_stop_reward`. A reward at or above the threshold now stops immediately without an unnecessary selector call.
-9. When refinement ends below the early-stop threshold, rank the initial and refined proofs by `format_score * verifier_meta_reward`, send the best three (configurable with `--prime_proof_selector_top_k`) to a selector turn, and use the selected proof's score as the final environment reward. Invalid selector XML falls back to the highest pre-selector score.
+9. The default hybrid launcher disables a generated selector for multi-turn rows because selector examples already come from the pre-rendered corpus. Legacy multi-turn runs can enable it with `--prime_proof_enable_selector true`; then the best three proofs are sent to a selector turn.
 
-The candidate gate is local to one verifiers `run_group`; it does not keep mutable state across Prime tasks. Prime receives the eight-member group only after the four continuing candidates finish, preserving full-environment batching. Override the split with `PRIME_GROUP_SIZE` and `PRIME_PROOF_CANDIDATE_CONTINUE_COUNT` in the 8-node command.
+The hybrid OPD path does not use a candidate gate or wait for sibling rollouts. Its `75/25` split is an expected ratio over many independently sampled tasks, not a guarantee for each block of eight. The older grouped candidate-ranking path remains available for legacy `mixed` runs through `--prime_proof_candidate_gate true`.
 
 Refinement evidence is ordered by lowest verifier score first, then highest effective meta score. This prioritizes reviews that identify problems; score-`1` verifier reviews are used only when fewer than `--prime_proof_refine_review_n` lower-scoring reviews are available.
 
@@ -200,6 +199,23 @@ bash operator_commands/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh
 ```
 
 The command derives `PRIME_GROUP_SIZE=1` and disables the candidate gate automatically when `PRIME_PROOF_DATASET_MODE` is `single`, `single_turn`, or `per_turn`. Explicit incompatible values fail during config generation instead of duplicating a pre-rendered row.
+
+For the default combined workflow:
+
+```bash
+export PRIME_PROOF_DATASET_MODE=hybrid
+export PRIME_OPD_PER_TURN_DATASET_PATH=/path/to/per_turn.parquet
+export PRIME_OPD_MULTI_TURN_DATASET_PATH=/path/to/imo_data_1959_2024.csv
+export PRIME_OPD_MULTI_TURN_FRACTION=0.20
+export PRIME_GROUP_SIZE=1
+export PRIME_PROOF_CANDIDATE_GATE=false
+export PRIME_PROOF_MULTI_TURN_CONTINUE_FRACTION=0.25
+export PRIME_PROOF_NUM_VERIFIERS=4
+export PRIME_PROOF_REFINE_ROUNDS=1
+export PRIME_PROOF_ENABLE_SELECTOR=false
+
+bash operator_commands/prime_rl_opd_8node_full_vocab_dpsk_ctx81920_nodes345.sh
+```
 
 Single-turn runs report policy token lengths through dynamic W&B metrics. For example, verifier rows produce `proof_opd_verify_policy_generated_tokens`, while the other stage names are `proof_opd_prove_policy_generated_tokens`, `proof_opd_select_policy_generated_tokens`, and `proof_opd_refine_policy_generated_tokens`. Prime-RL logs their mean/min/max/p10/p90 under the train environment's `metrics/` namespace and averages each key only over rows from that stage. Generic `proof_opd_policy_generated_tokens`, prompt-token, reasoning-token, and total-token metrics are also emitted. The same counts are stored in `proof_opd_trace` and its `stage_records` entry for sample-level debugging.
 

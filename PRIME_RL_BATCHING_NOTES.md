@@ -86,17 +86,20 @@ see `len(micro_batches) == 1` if the packed batch for that rank has only one bin
 
 ## Current Proof-OPD Boundary
 
-The 8-node command uses `PRIME_GROUP_SIZE=8` and enables the Proof-OPD candidate
-gate. Prime invokes one verifiers `run_group`; all eight rollouts generate a proof
-concurrently. A group-local barrier then ranks the proof outputs. Four candidates
-stop with proof-only traces, while the best four continue through verifier,
-optional meta-verifier, refinement, and selector stages.
+The 8-node hybrid command uses `PRIME_GROUP_SIZE=1` and disables the Proof-OPD
+candidate gate. Every multi-turn row generates a proof, then independently takes
+the continuation path with probability `0.25`. The other `0.75` stop with a
+proof-only trace. Continuing rows run four verifiers, optional meta-verification,
+and one refinement round. The hybrid run does not add a generated selector
+because pre-rendered selector rows are in the same dataset.
 
-There is deliberately no persistent cross-rollout streaming scheduler. This keeps
-the normal verifiers/Prime lifecycle and avoids carrying mutable candidate state
-across independently dispatched tasks. The candidate state exists only for the
-lifetime of one `run_group`. Prime receives the group after all four continuing
-paths finish, so the full eight-member group remains the atomic orchestrator unit.
+Rows marked `info.execution_mode=single_turn` stop after their one pre-rendered
+model call. They use the same multi-turn environment class, so one train
+environment can consume both data sources.
+
+There is deliberately no cross-rollout candidate barrier. Each rollout is an
+atomic orchestrator unit, so a short proof-only sample can reach OPD token packing
+without waiting for unrelated verifier/refinement paths.
 
 The global token targets are:
 

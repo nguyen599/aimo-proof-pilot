@@ -11,7 +11,9 @@ from verifiers.types import ResponseTokens
 from verifiers.types import Usage
 
 from proof_opd_env import ProofOPDSingleTurnEnv
+from proof_opd_env import ProofOPDEnv
 from proof_opd_env import load_environment
+from proof_opd_env import normalize_hybrid_dataset_rows
 from proof_opd_env import normalize_single_turn_dataset_rows
 from proof_opd_env import record_policy_token_metrics
 
@@ -67,6 +69,41 @@ class RecordingClient(Client):
                     completion_mask=[1, 1, 1],
                     completion_logprobs=[-0.1, -0.2, -0.3],
                 ),
+                tool_calls=None,
+            ),
+        )
+
+
+class ProofPipelineClient(RecordingClient):
+    async def get_response(self, prompt, model, sampling_args, tools=None, **kwargs) -> Response:
+        self.call_count += 1
+        self.prompts.append(prompt)
+        prompt_text = "\n".join(str(getattr(message, "content", "")) for message in prompt)
+        if "## Instruction" in prompt_text:
+            content = (
+                "<think>verify carefully</think>\n"
+                "Here is my evaluation of the solution:\nThe proof is correct.\n"
+                "Based on my evaluation, the final overall score should be:\n\\boxed{1}"
+            )
+        else:
+            content = (
+                "<think>construct a proof</think>\n"
+                "## Solution\nThe statement follows rigorously from reflexivity.\n"
+                "## Self Evaluation\n"
+                "Here is my evaluation of the solution: every step is justified.\n"
+                "\\boxed{1}"
+            )
+        return Response(
+            id=f"pipeline-response-{self.call_count}",
+            created=0,
+            model=model,
+            usage=None,
+            message=ResponseMessage(
+                content=content,
+                reasoning_content=None,
+                finish_reason="stop",
+                is_truncated=False,
+                tokens=None,
                 tool_calls=None,
             ),
         )
@@ -173,3 +210,89 @@ def test_policy_token_metrics_accumulate_across_stages() -> None:
     assert state["metrics"]["proof_opd_proof_policy_generated_tokens"] == 20
     assert state["metrics"]["proof_opd_verifier_policy_generated_tokens"] == 15
     assert state["metrics"]["proof_opd_verifier_policy_reasoning_tokens"] == 5
+
+
+def test_hybrid_normalization_mixes_execution_modes() -> None:
+    rows = [source_row("prove", index) for index in range(8)]
+    multi_rows = [{"question": f"Prove statement {index}."} for index in range(2)]
+
+    normalized = normalize_hybrid_dataset_rows(
+        rows,
+        multi_rows,
+        problem_column="auto",
+        solution_column="auto",
+        max_examples=10,
+        multi_turn_fraction=0.3,
+        mix_seed=7,
+    )
+
+    modes = [row["info"]["execution_mode"] for row in normalized]
+    assert len(normalized) == 10
+    assert modes.count("single_turn") == 7
+    assert modes.count("multi_turn") == 3
+
+
+def test_hybrid_single_turn_rows_stop_after_one_call(tmp_path) -> None:
+    single_path = tmp_path / "per_turn.jsonl"
+    multi_path = tmp_path / "imo.jsonl"
+    single_path.write_text(json.dumps(source_row("select")), encoding="utf-8")
+    multi_path.write_text(json.dumps({"question": "Prove that 1 = 1."}), encoding="utf-8")
+    env = load_environment(
+        str(single_path),
+        dataset_mode="hybrid",
+        multi_turn_dataset_path=str(multi_path),
+        multi_turn_fraction=0.0,
+        candidate_gate_enabled=True,
+        candidate_continue_count=1,
+    )
+    client = RecordingClient()
+
+    outputs = asyncio.run(
+        env.run_group(
+            group_inputs=[dict(env.dataset[0]), dict(env.dataset[0])],
+            client=client,
+            model="test-model",
+            sampling_args={},
+            state_columns=["trajectory"],
+        )
+    )
+
+    assert isinstance(env, ProofOPDEnv)
+    assert client.call_count == 2
+    assert [len(output["trajectory"]) for output in outputs] == [1, 1]
+    assert all(output["info"]["stage"] == "select" for output in outputs)
+    assert all("candidate_group_id" not in output["info"] for output in outputs)
+
+
+@pytest.mark.parametrize(
+    ("continue_fraction", "expected_calls", "expected_reason"),
+    [(0.0, 1, "sampled_proof_only"), (1.0, 2, "")],
+)
+def test_hybrid_multi_turn_route_is_sampled_per_rollout(
+    tmp_path,
+    continue_fraction: float,
+    expected_calls: int,
+    expected_reason: str,
+) -> None:
+    single_path = tmp_path / "per_turn.jsonl"
+    multi_path = tmp_path / "imo.jsonl"
+    single_path.write_text(json.dumps(source_row("prove")), encoding="utf-8")
+    multi_path.write_text(json.dumps({"question": "Prove that 1 = 1."}), encoding="utf-8")
+    env = load_environment(
+        str(single_path),
+        dataset_mode="hybrid",
+        multi_turn_dataset_path=str(multi_path),
+        multi_turn_fraction=1.0,
+        multi_turn_continue_fraction=continue_fraction,
+        candidate_gate_enabled=False,
+        num_verifiers=1,
+        refine_rounds=1,
+        selector_enabled=False,
+    )
+    client = ProofPipelineClient()
+
+    state = asyncio.run(env.rollout(env.dataset[0], client=client, model="test-model"))
+
+    assert client.call_count == expected_calls
+    assert state["info"]["multi_turn_continue_pipeline"] is bool(continue_fraction)
+    assert state["proof_opd_reward_payload"].get("reason", "") == expected_reason

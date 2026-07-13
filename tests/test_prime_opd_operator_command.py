@@ -71,6 +71,10 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
     assert "--prime_vllm_data_parallel_size 4" in output
     assert "--prime_opd_teacher_vllm_tensor_parallel_size 2" in output
     assert "--prime_trainer_dp_replicate 1" in output
+    assert "--prime_proof_dataset_mode hybrid" in output
+    assert "--prime_group_size 1" in output
+    assert "--prime_proof_candidate_gate false" in output
+    assert "--prime_proof_multi_turn_continue_fraction 0.25" in output
     assert "--prime_temperature 0.7" in output
     assert os.sys.executable in output
     assert str(REPO_ROOT / "src" / "train.py") in output
