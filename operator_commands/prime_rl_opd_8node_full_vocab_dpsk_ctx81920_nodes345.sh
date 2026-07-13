@@ -328,10 +328,10 @@ export RUNTIME_DEPENDENCY_RETRY_ATTEMPTS="${RUNTIME_DEPENDENCY_RETRY_ATTEMPTS:-1
 export RUNTIME_DEPENDENCY_RETRY_BASE_SECONDS="${RUNTIME_DEPENDENCY_RETRY_BASE_SECONDS:-10}"
 export RUNTIME_DEPENDENCY_RETRY_MAX_SECONDS="${RUNTIME_DEPENDENCY_RETRY_MAX_SECONDS:-90}"
 # Pin Prime-RL runtime vLLM to the wrapper's known-good wheel by default.
-# The baked vLLM 0.24 image currently fails policy FP8 startup with an internal
-# CUTLASS W8A8 GEMM error for OLMo3Sink; the pinned wheel matches the last
-# successful policy node config/log.
-export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-0}"
+# This is required for the old NII SIF, which predates the rebuilt image. Set
+# PRIME_RL_RUNTIME_INSTALL_VLLM=0 only when an image has been validated with
+# its bundled vLLM wheel.
+export PRIME_RL_RUNTIME_INSTALL_VLLM="${PRIME_RL_RUNTIME_INSTALL_VLLM:-1}"
 export PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION="${PRIME_RL_RUNTIME_VLLM_EXPECTED_VERSION:-0.23.1rc1.dev699+gf5a8d7337}"
 export PRIME_RL_RUNTIME_VLLM_WHEEL_URL="${PRIME_RL_RUNTIME_VLLM_WHEEL_URL:-https://wheels.vllm.ai/f5a8d73377d0f0a4e00cba172f9fbd0d50471b07/vllm-0.23.1rc1.dev699%2Bgf5a8d7337-cp38-abi3-manylinux_2_28_x86_64.whl}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
@@ -549,7 +549,7 @@ echo "[prime-opd-3node] train_ip=${TRAIN_IP}"
 echo "[prime-opd-3node] policy_base_url=${POLICY_BASE_URL}"
 echo "[prime-opd-3node] teacher_base_url=${TEACHER_BASE_URL}"
 
-if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-1}" == "1" ]]; then
+if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-0}" == "1" ]]; then
   echo "[prime-opd-3node] cleaning stale Prime-RL/vLLM processes on role node ${NODE_LABEL}"
   pkill -9 -f "[p]ython.*prime_rl" 2>/dev/null || true
   pkill -9 -f "[t]orchrun.*prime_rl" 2>/dev/null || true
