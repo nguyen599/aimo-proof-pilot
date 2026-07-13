@@ -860,7 +860,7 @@ COMMON_ARGS=(
   --prime_eval_verifiable_dataset_path "${EVAL_VERIFIABLE_DATASET_PATH}"
   --prime_eval_interval "${PRIME_OPD_EVAL_INTERVAL:-50}"
   --prime_eval_skip_first_step "${PRIME_OPD_EVAL_SKIP_FIRST_STEP:-true}"
-  --prime_eval_num_examples "${PRIME_OPD_EVAL_NUM_EXAMPLES:-32}"
+  --prime_eval_num_examples "${PRIME_OPD_EVAL_NUM_EXAMPLES:-33}"
   --prime_eval_group_size "${PRIME_OPD_EVAL_GROUP_SIZE:-1}"
   --prime_eval_max_completion_tokens "${EVAL_COMPLETION_TOKENS}"
   --prime_eval_refine_rounds "${PRIME_OPD_EVAL_REFINE_ROUNDS:-0}"
@@ -878,7 +878,7 @@ COMMON_ARGS=(
   --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-1}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
-  --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-true}"
+  --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
   --prime_trainer_fp8 "${PRIME_TRAINER_FP8:-true}"
   # Compiling every decoder layer during the first full-vocab backward can
   # exceed the one-node container's host-memory cgroup. Keep compilation
