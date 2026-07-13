@@ -418,7 +418,10 @@ export UV_CACHE_DIR="${TMP_ROOT}/uv"
 # on a shared node do not collide.
 VLLM_RPC_RUN_ID="$(printf '%s' "${RUN_NAME}" | sha256sum | cut -c1-12)"
 VLLM_RPC_NODE_ID="${NODE_LABEL}_${PRIME_COMPONENT_ROLE}"
-export VLLM_RPC_BASE_PATH="${PRIME_VLLM_RPC_BASE_PATH:-/tmp/vllm-rpc/${VLLM_RPC_RUN_ID}-${VLLM_RPC_NODE_ID}}"
+# Keep this outside the conventional /tmp/vllm-* namespace. Prime-RL and
+# cluster cleanup jobs remove that namespace while retiring stale engines,
+# which can race a newly starting role and delete its ZMQ parent directory.
+export VLLM_RPC_BASE_PATH="${PRIME_VLLM_RPC_BASE_PATH:-/tmp/vrpc/${VLLM_RPC_RUN_ID}-${VLLM_RPC_NODE_ID}}"
 export FLASHINFER_WORKSPACE_BASE="${TMP_ROOT}/flashinfer"
 export FLASHINFER_CUBIN_DIR="${TMP_ROOT}/flashinfer/.cache/flashinfer/cubins"
 export DG_JIT_CACHE_DIR="${DG_JIT_CACHE_DIR:-${TMP_ROOT}/deep_gemm}"
@@ -575,8 +578,7 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" && "${PRIME_3NODE_CLEAN_ROLE_PROCS:-0
   rm -rf /dev/shm/vllm-* /dev/shm/vllm_* /tmp/vllm-* /tmp/vllm_* /tmp/torch-* /tmp/torchelastic_* 2>/dev/null || true
 fi
 
-# The stale-runtime glob above also matches /tmp/vllm-rpc. Recreate this
-# launch's private IPC root after cleanup so vLLM can bind its ZMQ sockets.
+# Ensure this launch's private IPC root exists after local stale-process cleanup.
 mkdir -p "${VLLM_RPC_BASE_PATH}"
 
 MODEL_PATH="${PRIME_OPD_MODEL_PATH:-/tmp/models/opd-32b-deploy/opd-32b-deploy}"
