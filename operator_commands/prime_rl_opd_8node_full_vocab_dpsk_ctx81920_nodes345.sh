@@ -883,19 +883,19 @@ COMMON_ARGS=(
   # Compiling every decoder layer during the first full-vocab backward can
   # exceed the one-node container's host-memory cgroup. Keep compilation
   # available as an explicit override after the eager path is established.
-  --prime_trainer_compile "${PRIME_TRAINER_COMPILE:-false}"
+  --prime_trainer_compile "${PRIME_TRAINER_COMPILE:-true}"
   --prime_weight_broadcast_type "${PRIME_WEIGHT_BROADCAST_TYPE:-filesystem}"
   --prime_weight_broadcast_port "${PRIME_WEIGHT_BROADCAST_PORT:-29501}"
   --prime_weight_broadcast_timeout "${PRIME_WEIGHT_BROADCAST_TIMEOUT:-7200}"
   --prime_weight_broadcast_quantize_in_weight_transfer "${PRIME_WEIGHT_BROADCAST_QUANTIZE:-false}"
   --prime_checkpoint_interval "${PRIME_CHECKPOINT_INTERVAL:-100}"
-  --prime_checkpoint_keep_last "${PRIME_CHECKPOINT_KEEP_LAST:-2}"
+  --prime_checkpoint_keep_last "${PRIME_CHECKPOINT_KEEP_LAST:-20}"
   --prime_checkpoint_keep_interval "${PRIME_CHECKPOINT_KEEP_INTERVAL:-0}"
   --prime_checkpoint_output_dir "${CHECKPOINT_ROOT}"
   --prime_checkpoint_weights_only "${PRIME_CHECKPOINT_WEIGHTS_ONLY:-true}"
   --prime_checkpoint_wait_for_weights_timeout "${PRIME_CHECKPOINT_WAIT_FOR_WEIGHTS_TIMEOUT:-7200}"
   --prime_skip_model_check true
-  --prime_temperature "${PRIME_TEMPERATURE:-0.7}"
+  --prime_temperature "${PRIME_TEMPERATURE:-1.0}"
   --prime_top_p 0.95
   --with_tracking
   --wandb_mode online
