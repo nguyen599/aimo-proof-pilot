@@ -909,9 +909,9 @@ COMMON_ARGS=(
   --prime_trainer_fsdp_cpu_offload false
   --prime_trainer_optim_cpu_offload "${PRIME_TRAINER_OPTIM_CPU_OFFLOAD:-false}"
   --prime_trainer_fp8 "${PRIME_TRAINER_FP8:-true}"
-  # Compiling every decoder layer during the first full-vocab backward can
-  # exceed the one-node container's host-memory cgroup. Keep compilation
-  # available as an explicit override after the eager path is established.
+  # Real runs compile every decoder layer for higher steady-state throughput.
+  # Short transport/debug smokes may export PRIME_TRAINER_COMPILE=false to
+  # avoid paying the first-step compilation warm-up.
   --prime_trainer_compile "${PRIME_TRAINER_COMPILE:-true}"
   --prime_weight_broadcast_type "${PRIME_WEIGHT_BROADCAST_TYPE:-filesystem}"
   --prime_weight_broadcast_port "${PRIME_WEIGHT_BROADCAST_PORT:-29501}"
