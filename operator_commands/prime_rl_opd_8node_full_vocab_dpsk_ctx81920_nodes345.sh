@@ -7,8 +7,9 @@ set -euo pipefail
 #   GPUs 4,5: trainer (FSDP world size 2)
 #   GPUs 6,7: DeepSeek-V4-Flash teacher vLLM scorer (TP=2)
 # Default full-cluster layout:
-#   Node 0: trainer + orchestrator, 8 GPUs
-#   Nodes 1,2,3,4,5,6: student/policy vLLM rollout, 8 GPUs each
+#   Nodes 0,1: distributed trainer (node 0 also runs the orchestrator), 16 GPUs
+#   Nodes 2,3,4,5: student/policy vLLM rollout, 8 GPUs each
+#   Node 6: idle/spare
 #   Node 7: DeepSeek-V4-Flash teacher vLLM hidden-state scorer, 8 GPUs
 # Requires Prime-RL's independent per-rank filesystem-reference padding and
 # scalar full-vocab trainer-metric normalization fixes.
@@ -61,8 +62,8 @@ case "${NODE_LAYOUT}" in
     DEFAULT_TEACHER_GPU_IDS="0,1,2,3,4,5,6,7"
     ;;
   8node|full8)
-    DEFAULT_TRAIN_NODE="0"
-    DEFAULT_POLICY_NODES="1,2,3,4,5,6"
+    DEFAULT_TRAIN_NODE="0,1"
+    DEFAULT_POLICY_NODES="2,3,4,5"
     DEFAULT_TEACHER_NODE="7"
     DEFAULT_TRAIN_GPU_COUNT=8
     DEFAULT_POLICY_TP=1
