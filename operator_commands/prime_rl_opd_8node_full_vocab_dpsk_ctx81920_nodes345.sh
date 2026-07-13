@@ -896,6 +896,7 @@ COMMON_ARGS=(
   --prime_gpus_per_node 8
   --prime_trainer_model_impl custom
   --prime_trainer_attn "${TRAINER_ATTN}"
+  --prime_trainer_dp_replicate "${PRIME_TRAINER_DP_REPLICATE:-${TRAIN_NODE_COUNT}}"
   --prime_trainer_context_parallel_size "${PRIME_TRAINER_CP:-1}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false

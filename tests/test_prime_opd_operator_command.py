@@ -70,6 +70,7 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
     assert "--prime_infer_gpus 4" in output
     assert "--prime_vllm_data_parallel_size 4" in output
     assert "--prime_opd_teacher_vllm_tensor_parallel_size 2" in output
+    assert "--prime_trainer_dp_replicate 1" in output
     assert "--prime_temperature 0.7" in output
     assert os.sys.executable in output
     assert str(REPO_ROOT / "src" / "train.py") in output
@@ -155,6 +156,7 @@ def test_two_trainer_node_layout_assigns_distributed_ranks(tmp_path: Path) -> No
     assert "--prime_component trainer_orchestrator" in head_output
     assert "--prime_trainer_num_nodes 2" in head_output
     assert "--prime_trainer_node_rank 0" in head_output
+    assert "--prime_trainer_dp_replicate 2" in head_output
     assert "--prime_policy_dp_rank_count 8" in head_output
     assert f"--output_path {tmp_path / 'shared-trainer' / 'output'}" in head_output
     assert f"--prime_checkpoint_output_dir {tmp_path / 'shared-trainer' / 'checkpoints'}" in head_output
@@ -162,6 +164,7 @@ def test_two_trainer_node_layout_assigns_distributed_ranks(tmp_path: Path) -> No
     assert "--prime_component trainer_worker" in worker_output
     assert "--prime_trainer_num_nodes 2" in worker_output
     assert "--prime_trainer_node_rank 1" in worker_output
+    assert "--prime_trainer_dp_replicate 2" in worker_output
     assert f"--output_path {tmp_path / 'shared-trainer' / 'output'}" in worker_output
     assert f"--prime_checkpoint_output_dir {tmp_path / 'shared-trainer' / 'checkpoints'}" in worker_output
     assert "node=7 role=teacher_inference" in teacher_output

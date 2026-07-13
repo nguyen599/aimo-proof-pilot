@@ -907,6 +907,7 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "optim_cpu_offload": args.prime_trainer_optim_cpu_offload,
             "optimization_dtype": args.prime_trainer_optimization_dtype,
             "reduce_dtype": args.prime_trainer_reduce_dtype,
+            "dp_replicate": args.prime_trainer_dp_replicate,
             "cp": args.prime_trainer_context_parallel_size,
             "cp_style": args.prime_trainer_cp_style,
             "fp8": args.prime_trainer_fp8,
@@ -1741,6 +1742,15 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_trainer_optim_cpu_offload", type=parse_bool, default=True)
     parser.add_argument("--prime_trainer_optimization_dtype", default="bfloat16", choices=("bfloat16", "float32"))
     parser.add_argument("--prime_trainer_reduce_dtype", default="bfloat16", choices=("bfloat16", "float32"))
+    parser.add_argument(
+        "--prime_trainer_dp_replicate",
+        type=int,
+        default=1,
+        help=(
+            "Prime-RL trainer model.dp_replicate degree. Set this to the trainer-node count "
+            "to use one intra-node FSDP shard group per replicated HSDP island."
+        ),
+    )
     parser.add_argument("--prime_trainer_context_parallel_size", "--prime_trainer_cp", type=int, default=1)
     parser.add_argument("--prime_trainer_cp_style", default="ulysses", choices=("ring", "ulysses"))
     parser.add_argument("--prime_trainer_fp8", type=parse_bool, default=False)
