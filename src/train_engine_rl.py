@@ -452,7 +452,13 @@ def write_prime_orchestrator_config(path: Path, config: dict[str, Any]) -> None:
     write_toml_lines(lines, "log", config["log"])
     write_toml_lines(lines, "tokenizer", config["tokenizer"])
     if config.get("weight_broadcast"):
-        write_toml_lines(lines, "weight_broadcast", config["weight_broadcast"])
+        weight_broadcast = dict(config["weight_broadcast"])
+        if weight_broadcast.get("type") == "filesystem":
+            # Kernel-format filesystem transfer is selected by the trainer and
+            # auto-detected by inference workers. The orchestrator filesystem
+            # schema intentionally contains only the transport discriminator.
+            weight_broadcast.pop("quantize_in_weight_transfer", None)
+        write_toml_lines(lines, "weight_broadcast", weight_broadcast)
     if config.get("wandb"):
         write_toml_lines(lines, "wandb", config["wandb"])
     if config.get("orchestrator_ckpt"):
@@ -724,13 +730,13 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
 
     weight_broadcast: dict[str, Any] = {
         "type": args.prime_weight_broadcast_type,
+        "quantize_in_weight_transfer": args.prime_weight_broadcast_quantize_in_weight_transfer,
     }
     if args.prime_weight_broadcast_type == "nccl":
         weight_broadcast.update(
             {
                 "port": args.prime_weight_broadcast_port,
                 "timeout": args.prime_weight_broadcast_timeout,
-                "quantize_in_weight_transfer": args.prime_weight_broadcast_quantize_in_weight_transfer,
             }
         )
 
@@ -1761,8 +1767,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         type=parse_bool,
         default=False,
         help=(
-            "Use Prime-RL's quantized NCCL weight-transfer path. Requires "
-            "--prime_weight_broadcast_type nccl and custom trainer model support."
+            "Use Prime-RL's FP8 vLLM kernel-format weight-transfer path. Supported by "
+            "NCCL and filesystem backends; requires custom trainer model support."
         ),
     )
     parser.add_argument("--prime_temperature", type=float, default=0.7)

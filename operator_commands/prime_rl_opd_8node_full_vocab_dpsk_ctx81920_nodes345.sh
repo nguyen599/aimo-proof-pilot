@@ -916,7 +916,7 @@ COMMON_ARGS=(
   --prime_weight_broadcast_type "${PRIME_WEIGHT_BROADCAST_TYPE:-filesystem}"
   --prime_weight_broadcast_port "${PRIME_WEIGHT_BROADCAST_PORT:-29501}"
   --prime_weight_broadcast_timeout "${PRIME_WEIGHT_BROADCAST_TIMEOUT:-7200}"
-  --prime_weight_broadcast_quantize_in_weight_transfer "${PRIME_WEIGHT_BROADCAST_QUANTIZE:-false}"
+  --prime_weight_broadcast_quantize_in_weight_transfer "${PRIME_WEIGHT_BROADCAST_QUANTIZE:-true}"
   --prime_checkpoint_interval "${PRIME_CHECKPOINT_INTERVAL:-100}"
   --prime_checkpoint_keep_last "${PRIME_CHECKPOINT_KEEP_LAST:-20}"
   --prime_checkpoint_keep_interval "${PRIME_CHECKPOINT_KEEP_INTERVAL:-0}"
