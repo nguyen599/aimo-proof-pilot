@@ -260,6 +260,11 @@ DEFAULT_PRIME_RL_RUNTIME_REQUIREMENTS = (
     # from package __init__, which assumes these NGC image utilities exist.
     "debugpy>=1.8.0",
     "expecttest>=0.3.0",
+    # TileLang 0.1.9 bundles the TVM Python API used by vLLM's DeepSeek-V4
+    # mHC kernels. apache-tvm-ffi 0.1.12 is ABI-incompatible with that bundle
+    # and fails during worker startup after the teacher weights are loaded.
+    "apache-tvm-ffi==0.1.9",
+    "tilelang==0.1.9",
 )
 PROTECTED_RUNTIME_OVERLAY_PACKAGES = (
     "flash_attn",
@@ -1677,6 +1682,15 @@ def runtime_dependency_probe(
             "from nemo_automodel.components.quantization.fp8 import FP8Config; "
             "print('nemo_automodel', nemo_automodel.__file__); "
             "print('FP8Config', FP8Config)"
+        )
+    elif module == "tilelang_mhc":
+        source = (
+            "import importlib.metadata as md; "
+            "import tilelang; import tilelang.language; "
+            "from vllm.model_executor.kernels.mhc import tilelang_kernels; "
+            "print('tilelang', md.version('tilelang'), tilelang.__file__); "
+            "print('apache-tvm-ffi', md.version('apache-tvm-ffi')); "
+            "print('vllm_mhc', tilelang_kernels.__file__)"
         )
     elif module == "prime_rl":
         source = "print('Prime-RL import preflight skipped')"
@@ -3180,6 +3194,23 @@ def prepare_runtime_training_dependencies(
             megatron_dir,
             prime_rl_runtime_vllm_expected_fragment(),
         )
+        prime_component = forwarded_option_value(
+            forwarded_args,
+            "--prime_component",
+            "--prime-component",
+        )
+        if prime_component == "teacher_inference":
+            tilelang_ok, tilelang_details = runtime_dependency_probe(
+                site_dir,
+                megatron_dir,
+                module="tilelang_mhc",
+            )
+            if not tilelang_ok:
+                raise RuntimeError(
+                    "Runtime TileLang/vLLM mHC import verification failed before teacher startup.\n"
+                    f"{tilelang_details}"
+                )
+            log(f"Runtime TileLang/vLLM mHC import verified:\n{tilelang_details}")
         # if (
         #     os.environ.get("PRIME_RL_VLLM_OVERRIDE", "0") == "1"
         #     or os.environ.get("VLLM_SKIP_DEEPSEEK_V4_SPARSE_MLA_WARMUP", "0") == "1"
