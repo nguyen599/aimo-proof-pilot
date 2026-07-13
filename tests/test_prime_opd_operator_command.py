@@ -46,6 +46,7 @@ def test_one_node_layout_uses_two_train_four_policy_two_teacher_gpus(tmp_path: P
             "PRIME_3NODE_RENDEZVOUS_DIR": str(tmp_path / "rendezvous"),
             "PRIME_TRAIN_PYTHON": os.sys.executable,
             "PRIME_TRAIN_ENTRYPOINT": str(REPO_ROOT / "src" / "train.py"),
+            "PRIME_TEMPERATURE": "0.7",
             "OLMO_RUN_DIR_NAME": "one_node_layout_test",
         }
     )
@@ -118,6 +119,7 @@ def test_two_trainer_node_layout_assigns_distributed_ranks(tmp_path: Path) -> No
             "PRIME_COMMAND_PREVIEW": "1",
             "PRIME_3NODE_CLEAN_ROLE_PROCS": "0",
             "PRIME_3NODE_TMP_ROOT": str(tmp_path / "runtime"),
+            "PRIME_3NODE_SHARED_TRAIN_ROOT": str(tmp_path / "shared-trainer"),
             "PRIME_3NODE_RENDEZVOUS_DIR": str(rendezvous),
             "PRIME_TRAIN_PYTHON": os.sys.executable,
             "PRIME_TRAIN_ENTRYPOINT": str(REPO_ROOT / "src" / "train.py"),
@@ -148,10 +150,14 @@ def test_two_trainer_node_layout_assigns_distributed_ranks(tmp_path: Path) -> No
     assert "--prime_trainer_num_nodes 2" in head_output
     assert "--prime_trainer_node_rank 0" in head_output
     assert "--prime_policy_dp_rank_count 8" in head_output
+    assert f"--output_path {tmp_path / 'shared-trainer' / 'output'}" in head_output
+    assert f"--prime_checkpoint_output_dir {tmp_path / 'shared-trainer' / 'checkpoints'}" in head_output
     assert "node=1 role=trainer_worker" in worker_output
     assert "--prime_component trainer_worker" in worker_output
     assert "--prime_trainer_num_nodes 2" in worker_output
     assert "--prime_trainer_node_rank 1" in worker_output
+    assert f"--output_path {tmp_path / 'shared-trainer' / 'output'}" in worker_output
+    assert f"--prime_checkpoint_output_dir {tmp_path / 'shared-trainer' / 'checkpoints'}" in worker_output
     assert "node=7 role=teacher_inference" in teacher_output
     assert 'moe_backend' in teacher_output
     assert 'deep_gemm_mega_moe' in teacher_output

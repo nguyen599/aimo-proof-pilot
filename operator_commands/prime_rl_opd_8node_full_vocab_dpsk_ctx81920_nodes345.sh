@@ -599,9 +599,18 @@ PER_TURN_DATASET_PATH="${PRIME_OPD_PER_TURN_DATASET_PATH:-/tmp/data/dsflash-proo
 DATASET_PATH="${PRIME_OPD_DATASET_PATH:-${PER_TURN_DATASET_PATH}}"
 VERIFIABLE_DATASET_PATH="${PRIME_OPD_VERIFIABLE_DATASET_PATH:-${RUNTIME_ROOT}/data/astral-bench.csv}"
 EVAL_VERIFIABLE_DATASET_PATH="${PRIME_OPD_EVAL_VERIFIABLE_DATASET_PATH:-${RUNTIME_ROOT}/data/hmmt_feb_2026.csv}"
-OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${TMP_ROOT}/output}"
 LOG_ROOT="${PRIME_OPD_LOG_ROOT:-${TMP_ROOT}/logs}"
-CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME}_${PRIME_COMPONENT_ROLE}}"
+if [[ "${PRIME_COMPONENT_ROLE}" == "trainer_orchestrator" || "${PRIME_COMPONENT_ROLE}" == "trainer_worker" ]]; then
+  # Distributed trainer ranks must consume the same rollout shards and weight
+  # broadcasts. Keep caches/logs role-local, but place state shared by both
+  # trainer nodes under one path on the cluster filesystem.
+  SHARED_TRAIN_ROOT="${PRIME_3NODE_SHARED_TRAIN_ROOT:-/tmp/pp3/${RUN_NAME}/shared_trainer}"
+  OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${SHARED_TRAIN_ROOT}/output}"
+  CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${SHARED_TRAIN_ROOT}/checkpoints}"
+else
+  OUTPUT_ROOT="${PRIME_OPD_OUTPUT_ROOT:-${TMP_ROOT}/output}"
+  CHECKPOINT_ROOT="${PRIME_OPD_CHECKPOINT_ROOT:-${TMP_ROOT}/checkpoints/${RUN_NAME}_${PRIME_COMPONENT_ROLE}}"
+fi
 
 # Match the Beaker production shape. Completion remains below the context limit
 # so prompts and generated traces retain headroom in both policy and teacher.
