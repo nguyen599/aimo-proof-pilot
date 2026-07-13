@@ -417,6 +417,7 @@ export UV_CACHE_DIR="${TMP_ROOT}/uv"
 # root short, but derive it from the run name and local role so concurrent runs
 # on a shared node do not collide.
 VLLM_RPC_RUN_ID="$(printf '%s' "${RUN_NAME}" | sha256sum | cut -c1-12)"
+RUN_PORT_OFFSET=$((16#${VLLM_RPC_RUN_ID:0:4} % 1000))
 VLLM_RPC_NODE_ID="${NODE_LABEL}_${PRIME_COMPONENT_ROLE}"
 # Keep this outside the conventional /tmp/vllm-* namespace. Prime-RL and
 # cluster cleanup jobs remove that namespace while retiring stale engines,
@@ -531,8 +532,18 @@ wait_for_http() {
   done
 }
 
-POLICY_PORT="${PRIME_POLICY_PORT:-8000}"
-TEACHER_PORT="${PRIME_OPD_TEACHER_PORT:-8001}"
+UNIQUE_SERVICE_PORTS="${PRIME_UNIQUE_SERVICE_PORTS:-true}"
+if [[ "${UNIQUE_SERVICE_PORTS,,}" =~ ^(1|true|yes|on)$ ]]; then
+  # A run-specific port prevents the trainer from accepting a healthy vLLM
+  # endpoint left behind by an older run before the new policy process starts.
+  POLICY_PORT_DEFAULT=$((18000 + RUN_PORT_OFFSET))
+  TEACHER_PORT_DEFAULT=$((20000 + RUN_PORT_OFFSET))
+else
+  POLICY_PORT_DEFAULT=8000
+  TEACHER_PORT_DEFAULT=8001
+fi
+POLICY_PORT="${PRIME_POLICY_PORT:-${POLICY_PORT_DEFAULT}}"
+TEACHER_PORT="${PRIME_OPD_TEACHER_PORT:-${TEACHER_PORT_DEFAULT}}"
 REQUIRED_NODES_CSV="${TRAIN_NODES},${POLICY_NODES},${TEACHER_NODE}"
 IFS=',' read -ra REQUIRED_NODE_PARTS <<< "${REQUIRED_NODES_CSV}"
 for rank in "${REQUIRED_NODE_PARTS[@]}"; do
@@ -685,8 +696,8 @@ NODE_PORT_OFFSET=0
 if [[ "${NODE_LABEL}" =~ ^[0-9]+$ ]]; then
   NODE_PORT_OFFSET="${NODE_LABEL}"
 fi
-POLICY_DP_RPC_PORT="${PRIME_VLLM_DATA_PARALLEL_RPC_PORT:-$((37000 + NODE_PORT_OFFSET))}"
-TEACHER_DP_RPC_PORT="${PRIME_OPD_TEACHER_VLLM_DATA_PARALLEL_RPC_PORT:-38005}"
+POLICY_DP_RPC_PORT="${PRIME_VLLM_DATA_PARALLEL_RPC_PORT:-$((37000 + RUN_PORT_OFFSET + NODE_PORT_OFFSET))}"
+TEACHER_DP_RPC_PORT="${PRIME_OPD_TEACHER_VLLM_DATA_PARALLEL_RPC_PORT:-$((39000 + RUN_PORT_OFFSET))}"
 TEACHER_GPU_COUNT="$(csv_count "${TEACHER_GPU_IDS}")"
 TEACHER_PARALLEL_GPU_COUNT=$((TEACHER_TP * TEACHER_DP))
 if (( TEACHER_GPU_COUNT != TEACHER_PARALLEL_GPU_COUNT )); then
