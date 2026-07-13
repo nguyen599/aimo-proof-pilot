@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import netrc
 import os
@@ -66,6 +67,14 @@ def normalize_optional_choice(value: str | None) -> str | None:
 def log(message: str) -> None:
     timestamp = datetime.now().strftime("%H:%M:%S,%f")[:-3]
     print(f"{timestamp} train_engine_rl {message}", flush=True)
+
+
+def resolve_wandb_shared_run_id(env: dict[str, str], log_dir: Path) -> str:
+    explicit_run_id = env.get("WANDB_SHARED_RUN_ID")
+    if explicit_run_id:
+        return explicit_run_id
+    run_identity = env.get("OLMO_RUN_DIR_NAME") or env.get("PRIME_3NODE_RUN_NAME") or str(log_dir.resolve())
+    return hashlib.sha256(run_identity.encode("utf-8")).hexdigest()[:32]
 
 
 def redacted(value: Any) -> Any:
@@ -1225,6 +1234,7 @@ def run_distributed_trainer_component(
     trainer_command = build_distributed_trainer_command(args, trainer_config_path)
     env = os.environ.copy()
     env.setdefault("WANDB_SHARED_MODE", "1")
+    env["WANDB_SHARED_RUN_ID"] = resolve_wandb_shared_run_id(env, log_dir)
     if args.prime_trainer_node_rank != 0:
         env["WANDB_SHARED_LABEL"] = "trainer"
         return run_logged_subprocess(
