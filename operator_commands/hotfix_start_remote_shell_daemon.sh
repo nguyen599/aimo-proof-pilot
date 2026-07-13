@@ -3,14 +3,16 @@ set -euo pipefail
 RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026-challenge/control-panel-nguyen}}}"
 SPACE_SLUG="${RELAY_SPACE//\//_}"
 SPACE_SLUG="${SPACE_SLUG//[^A-Za-z0-9_.-]/_}"
-LOGS="/tmp/imochallenge/logs"
-RUN="/tmp/imochallenge/run"
-PYTHON_SITE="/tmp/imochallenge/python_site"
-mkdir -p "$LOGS" "$RUN" "$PYTHON_SITE"
-
 NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
 HOST="$(hostname 2>/dev/null || echo unknown-host)"
+NODE_RUNTIME_ROOT="${REMOTE_SHELL_RUNTIME_ROOT:-/tmp/imochallenge/node${NODE_LABEL}}"
+LOGS="${NODE_RUNTIME_ROOT}/logs"
+RUN="${NODE_RUNTIME_ROOT}/run"
+PYTHON_SITE="${NODE_RUNTIME_ROOT}/python_site"
+mkdir -p "$LOGS" "$RUN" "$PYTHON_SITE"
+
 PY="$(command -v python3 || command -v python || echo /usr/bin/python3)"
+export NODE_RUNTIME_ROOT LOGS RUN PYTHON_SITE
 export PYTHONPATH="${PYTHON_SITE}:${PYTHONPATH:-}"
 export GRADIO_ANALYTICS_ENABLED=False
 export HF_HUB_DISABLE_TELEMETRY=1
@@ -44,7 +46,7 @@ PY
 
 CLIENT_SRC="${REMOTE_SHELL_CLIENT_PY:-}"
 if [ -z "$CLIENT_SRC" ]; then
-    CLIENT_REPO_DIR="${REMOTE_SHELL_CLIENT_REPO_DIR:-/tmp/aimo-proof-pilot-remote-shell}"
+    CLIENT_REPO_DIR="${REMOTE_SHELL_CLIENT_REPO_DIR:-${NODE_RUNTIME_ROOT}/aimo-proof-pilot-remote-shell}"
     CLIENT_REPO_URL="${SUBMISSIONS_REPO:-https://github.com/nguyen599/aimo-proof-pilot.git}"
     CLIENT_REPO_REF="${SUBMISSIONS_REF:-main}"
     if [ ! -d "$CLIENT_REPO_DIR/.git" ]; then
@@ -67,11 +69,12 @@ LOG_FILE="${LOGS}/relay-daemon-${SPACE_SLUG}.log"
 PID_FILE="${RUN}/relay-daemon-${SPACE_SLUG}.pid"
 
 EXISTING_FILE="${RUN}/remote-shell-client-existing-${SPACE_SLUG}.txt"
-if "$PY" - "$RELAY_SPACE" > "$EXISTING_FILE" <<'PY'
+if "$PY" - "$RELAY_SPACE" "$CLIENT_ID" > "$EXISTING_FILE" <<'PY'
 import os
 import sys
 
 target = sys.argv[1]
+expected_client_id = sys.argv[2]
 matches = []
 for pid in os.listdir("/proc"):
     if not pid.isdigit():
@@ -89,7 +92,7 @@ for pid in os.listdir("/proc"):
                 key, value = item.split(b"=", 1)
                 env[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
         space = env.get("RELAY_SPACE") or env.get("REMOTE_SHELL_SPACE") or env.get("CONTROL_PANEL_SPACE")
-        if space == target:
+        if space == target and env.get("CLIENT_ID") == expected_client_id:
             matches.append((pid, cmd))
     except OSError:
         continue
@@ -103,17 +106,18 @@ then
     exit 0
 fi
 
-if pgrep -af "$START_SCRIPT" >/tmp/remote-shell-wrapper-existing.txt 2>/dev/null; then
+WRAPPER_EXISTING_FILE="${RUN}/remote-shell-wrapper-existing.txt"
+if pgrep -af "$START_SCRIPT" >"$WRAPPER_EXISTING_FILE" 2>/dev/null; then
     echo "remote-shell restart wrapper already running for ${RELAY_SPACE}:"
-    cat /tmp/remote-shell-wrapper-existing.txt
+    cat "$WRAPPER_EXISTING_FILE"
     exit 0
 fi
 
 cat > "$START_SCRIPT" <<'EOF'
 #!/bin/bash
 set -uo pipefail
-RUN=/tmp/imochallenge/run
-PYTHON_SITE=/tmp/imochallenge/python_site
+RUN="${RUN:?RUN must be exported by the relay launcher}"
+PYTHON_SITE="${PYTHON_SITE:?PYTHON_SITE must be exported by the relay launcher}"
 PY="${PY:-$(command -v python3 || command -v python || echo /usr/bin/python3)}"
 export PYTHONPATH="${PYTHON_SITE}:${PYTHONPATH:-}"
 export GRADIO_ANALYTICS_ENABLED=False
