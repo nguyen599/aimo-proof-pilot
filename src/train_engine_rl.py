@@ -18,6 +18,8 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from prime_sft import prepare_distributed_per_turn_sft_cache
+
 
 TRUTHY = {"1", "true", "yes", "on"}
 DEFAULT_STUDENT_HF_REPO = "chankhavu/yccchen-olmo3-deploy"
@@ -237,7 +239,13 @@ def resolve_runtime_assets(args: argparse.Namespace) -> None:
     component = args.prime_component
 
     student_repo = args.model_hf_repo
-    student_needed = component in {"full", "policy_inference", "trainer_orchestrator", "trainer_worker"}
+    student_needed = component in {
+        "full",
+        "policy_inference",
+        "trainer_orchestrator",
+        "trainer_worker",
+        "sft_trainer",
+    }
     if student_needed:
         if args.model_path and model_snapshot_complete(Path(args.model_path).expanduser()):
             args.model_path = str(Path(args.model_path).expanduser().resolve())
@@ -294,7 +302,7 @@ def resolve_runtime_assets(args: argparse.Namespace) -> None:
     elif args.prime_algorithm == "opd" and not args.prime_opd_teacher_model:
         args.prime_opd_teacher_model = teacher_repo
 
-    dataset_needed = (
+    dataset_needed = component == "sft_trainer" or (
         component in {"full", "trainer_orchestrator"}
         and args.prime_env_id != "math-env"
     )
@@ -508,6 +516,31 @@ def write_prime_inference_config(path: Path, config: dict[str, Any]) -> None:
     write_toml_lines(lines, "parallel", config["parallel"])
     if config.get("vllm_extra"):
         write_toml_lines(lines, "vllm_extra", config["vllm_extra"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_prime_sft_config(path: Path, config: dict[str, Any]) -> None:
+    lines: list[str] = []
+    write_toml_lines(lines, None, config["root"])
+    write_toml_lines(lines, "log", config["log"])
+    write_toml_lines(lines, "deployment", config["deployment"])
+    write_toml_lines(lines, "model", config["model"])
+    write_toml_lines(lines, "tokenizer", config["tokenizer"])
+    write_toml_lines(lines, "data", config["data"])
+    write_toml_lines(lines, "data.loss_mask", config["data_loss_mask"])
+    if config.get("val"):
+        write_toml_lines(lines, "val", config["val"])
+        write_toml_lines(lines, "val.data", config["val_data"])
+        write_toml_lines(lines, "val.data.loss_mask", config["data_loss_mask"])
+    write_toml_lines(lines, "optim", config["optim"])
+    write_toml_lines(lines, "scheduler", config["scheduler"])
+    if config.get("ckpt"):
+        write_toml_lines(lines, "ckpt", config["ckpt"])
+        if config.get("ckpt_weights"):
+            write_toml_lines(lines, "ckpt.weights", config["ckpt_weights"])
+    if config.get("wandb"):
+        write_toml_lines(lines, "wandb", config["wandb"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
@@ -1010,6 +1043,173 @@ def build_prime_rl_config(args: argparse.Namespace, output_dir: Path) -> dict[st
     }
 
 
+def build_prime_sft_config(
+    args: argparse.Namespace,
+    output_dir: Path,
+    train_dataset_path: Path,
+    validation_dataset_path: Path,
+) -> dict[str, Any]:
+    world_size = args.prime_trainer_num_nodes * args.prime_train_gpus
+    cp_size = args.prime_trainer_context_parallel_size
+    if cp_size < 1 or world_size % cp_size != 0:
+        raise ValueError(
+            f"SFT context parallel size must divide world size; got cp={cp_size}, world_size={world_size}"
+        )
+    micro_batch_size = args.prime_sft_micro_batch_size
+    global_batch_size = args.prime_sft_global_batch_size
+    if global_batch_size <= 0:
+        numerator = world_size * micro_batch_size
+        if numerator % cp_size != 0:
+            raise ValueError(
+                "Cannot infer SFT global batch size from world size, micro batch size, and CP"
+            )
+        global_batch_size = numerator // cp_size
+    if (global_batch_size * cp_size) % (world_size * micro_batch_size) != 0:
+        raise ValueError(
+            "SFT batch_size * cp must be divisible by world_size * micro_batch_size; "
+            f"got batch_size={global_batch_size}, cp={cp_size}, world_size={world_size}, "
+            f"micro_batch_size={micro_batch_size}"
+        )
+
+    optim = {
+        "type": args.optimizer,
+        "lr": args.learning_rate,
+        "weight_decay": args.weight_decay,
+        "max_norm": args.max_grad_norm,
+    }
+    if args.optimizer == "te_fused_adamw":
+        optim.update(
+            {
+                "exp_avg_dtype": args.prime_te_adamw_exp_avg_dtype,
+                "exp_avg_sq_dtype": args.prime_te_adamw_exp_avg_sq_dtype,
+                "master_weight_dtype": args.prime_te_adamw_master_weight_dtype,
+                "master_weights": args.prime_te_adamw_master_weights,
+                "store_param_remainders": args.prime_te_adamw_store_param_remainders,
+            }
+        )
+    scheduler: dict[str, Any] = {"type": args.prime_lr_scheduler}
+    if args.prime_lr_scheduler in {"linear", "cosine"}:
+        scheduler.update(
+            {
+                "warmup_steps": args.prime_lr_warmup_steps,
+                "min_lr": args.prime_lr_min,
+            }
+        )
+    if args.prime_lr_scheduler == "linear":
+        scheduler["decay_steps"] = args.prime_lr_decay_steps
+
+    checkpoint_interval = args.prime_checkpoint_interval if args.prime_checkpoint_interval > 0 else None
+    checkpoint_enabled = checkpoint_interval is not None or args.prime_checkpoint_resume_step is not None
+    ckpt = None
+    ckpt_weights = None
+    if checkpoint_enabled:
+        ckpt = {
+            "output_dir": args.prime_checkpoint_output_dir,
+            "interval": checkpoint_interval,
+            "resume_step": args.prime_checkpoint_resume_step,
+            "keep_last": args.prime_checkpoint_keep_last if args.prime_checkpoint_keep_last > 0 else None,
+            "keep_interval": (
+                args.prime_checkpoint_keep_interval
+                if args.prime_checkpoint_keep_interval > 0
+                else None
+            ),
+            "weights_only": args.prime_checkpoint_weights_only,
+            "skip_gather_master_weights": (
+                args.prime_checkpoint_skip_gather_master_weights
+                or args.prime_checkpoint_disable_weight_snapshots
+            ),
+        }
+        if not args.prime_checkpoint_disable_weight_snapshots:
+            ckpt_weights = {
+                "save_sharded": True,
+                "save_format": "safetensors",
+                "save_adapter_separately": False,
+            }
+
+    wandb_config = None
+    if args.with_tracking and args.wandb_mode != "disabled":
+        wandb_config = {"project": args.wandb_project, "name": args.wandb_name}
+
+    data = {
+        "type": "sft",
+        "name": str(train_dataset_path),
+        "batch_size": global_batch_size,
+        "seq_len": args.max_seq_length,
+        "pack_function": args.prime_sft_pack_function,
+        "micro_batch_size": micro_batch_size,
+        "shuffle": True,
+        "seed": args.prime_sft_seed,
+        "overflow_policy": args.prime_sft_overflow_policy,
+    }
+    val_data = {
+        **data,
+        "name": str(validation_dataset_path),
+        "shuffle": False,
+    }
+    deployment: dict[str, Any]
+    if args.prime_trainer_num_nodes == 1:
+        deployment = {
+            "type": "single_node",
+            "gpus_per_node": args.prime_gpus_per_node,
+            "num_gpus": args.prime_train_gpus,
+        }
+    else:
+        deployment = {
+            "type": "multi_node",
+            "launcher": "external",
+            "gpus_per_node": args.prime_gpus_per_node,
+            "num_nodes": args.prime_trainer_num_nodes,
+            "nodes_per_fsdp_group": args.prime_sft_nodes_per_fsdp_group,
+        }
+
+    return {
+        "root": {
+            "output_dir": str(output_dir),
+            "max_steps": args.max_train_steps,
+            "clean_output_dir": args.clean_output_dir,
+            "loss_impl": args.prime_sft_loss_impl,
+            "dist_timeout_seconds": args.prime_trainer_rdzv_timeout,
+            "dry_run": args.dry_run_prime_rl,
+        },
+        "log": {"level": args.prime_log_level, "json_logging": False},
+        "deployment": deployment,
+        "model": {
+            "name": args.model_path,
+            "seq_len": args.max_seq_length,
+            "impl": args.prime_trainer_model_impl,
+            "attn": args.prime_trainer_attn,
+            "trust_remote_code": args.prime_trainer_model_impl in {"hf", "auto"},
+            "fsdp_cpu_offload": args.prime_trainer_fsdp_cpu_offload,
+            "optim_cpu_offload": args.prime_trainer_optim_cpu_offload,
+            "optimization_dtype": args.prime_trainer_optimization_dtype,
+            "reduce_dtype": args.prime_trainer_reduce_dtype,
+            "dp_replicate": args.prime_trainer_dp_replicate,
+            "cp": cp_size,
+            "cp_style": args.prime_trainer_cp_style,
+            "fp8": args.prime_trainer_fp8,
+            "compile": None if args.prime_trainer_compile else "None",
+            "ac_offloading": "None",
+        },
+        "tokenizer": {
+            "name": args.tokenizer_path or args.model_path,
+            "trust_remote_code": True,
+        },
+        "data": data,
+        "data_loss_mask": {"system": False, "user": False, "assistant": True, "tool": False},
+        "val": (
+            {"interval": args.prime_sft_eval_interval, "eval_on_start": False}
+            if args.prime_sft_validation_problem_count > 0
+            else None
+        ),
+        "val_data": val_data,
+        "optim": optim,
+        "scheduler": scheduler,
+        "ckpt": ckpt,
+        "ckpt_weights": ckpt_weights,
+        "wandb": wandb_config,
+    }
+
+
 def build_prime_policy_inference_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     vllm_extra = parse_extra_json(args.prime_vllm_extra)
     prime_vllm_quantization = normalize_optional_choice(args.prime_vllm_quantization)
@@ -1217,7 +1417,12 @@ def stop_process_group(process: subprocess.Popen | None, name: str) -> None:
         process.wait(timeout=30)
 
 
-def build_distributed_trainer_command(args: argparse.Namespace, trainer_config_path: Path) -> list[str]:
+def build_distributed_trainer_command(
+    args: argparse.Namespace,
+    trainer_config_path: Path,
+    *,
+    trainer_module: str = "prime_rl.trainer.rl.train",
+) -> list[str]:
     if args.prime_trainer_num_nodes < 1:
         raise ValueError("--prime_trainer_num_nodes must be at least 1")
     if not 0 <= args.prime_trainer_node_rank < args.prime_trainer_num_nodes:
@@ -1251,7 +1456,7 @@ def build_distributed_trainer_command(args: argparse.Namespace, trainer_config_p
             f"is_host={'true' if args.prime_trainer_node_rank == 0 else 'false'}"
         ),
         "-m",
-        "prime_rl.trainer.rl.train",
+        trainer_module,
         "@",
         str(trainer_config_path),
     ]
@@ -1318,6 +1523,38 @@ def run_distributed_trainer_component(
             orchestrator_log.close()
         if trainer_log is not None:
             trainer_log.close()
+
+
+def run_distributed_sft_component(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    log_dir: Path,
+) -> int:
+    config_path = log_dir / "sft.toml"
+    write_prime_sft_config(config_path, config)
+    if args.dry_run_prime_rl:
+        log(f"Prime-RL SFT dry run complete; config validated and written to {config_path}")
+        return 0
+    command = build_distributed_trainer_command(
+        args,
+        config_path,
+        trainer_module="prime_rl.trainer.sft.train",
+    )
+    env = os.environ.copy()
+    env.setdefault("WANDB_SHARED_MODE", "1")
+    env["WANDB_SHARED_RUN_ID"] = resolve_wandb_shared_run_id(env, log_dir)
+    env["WANDB_SHARED_LABEL"] = f"sft-trainer-node-{args.prime_trainer_node_rank}"
+    log(
+        "Starting distributed Prime-RL SFT trainer: "
+        f"node_rank={args.prime_trainer_node_rank}/{args.prime_trainer_num_nodes} "
+        f"gpus_per_node={args.prime_train_gpus} "
+        f"rdzv={args.prime_trainer_master_addr}:{args.prime_trainer_master_port}"
+    )
+    return run_logged_subprocess(
+        command,
+        env,
+        log_path=log_dir / f"sft_trainer_node_{args.prime_trainer_node_rank}.log",
+    )
 
 
 def parse_env_bool(name: str, default: bool = False) -> bool:
@@ -1602,11 +1839,18 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument(
         "--prime_component",
         default="full",
-        choices=("full", "trainer_orchestrator", "trainer_worker", "policy_inference", "teacher_inference"),
+        choices=(
+            "full",
+            "trainer_orchestrator",
+            "trainer_worker",
+            "policy_inference",
+            "teacher_inference",
+            "sft_trainer",
+        ),
         help=(
             "Prime-RL component to run. 'full' preserves the existing single-node all-in-one launcher. "
             "Use policy_inference, teacher_inference, trainer_orchestrator, and trainer_worker "
-            "for manual multi-node role-gated runs."
+            "for manual RL role-gated runs, or sft_trainer for native offline SFT."
         ),
     )
     parser.add_argument("--prime_trainer_num_nodes", type=int, default=1)
@@ -1615,7 +1859,31 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--prime_trainer_master_port", type=int, default=29400)
     parser.add_argument("--prime_trainer_rdzv_id", default=None)
     parser.add_argument("--prime_trainer_rdzv_timeout", type=int, default=7200)
-    parser.add_argument("--prime_algorithm", default="grpo", choices=("grpo", "opd"))
+    parser.add_argument("--prime_algorithm", default="grpo", choices=("grpo", "opd", "sft"))
+    parser.add_argument(
+        "--prime_sft_cache_dir",
+        default=os.environ.get("PRIME_SFT_CACHE_DIR", "/tmp/prime-sft-cache"),
+        help="Shared cache directory for normalized per-turn SFT train/validation parquet files.",
+    )
+    parser.add_argument(
+        "--prime_sft_stages",
+        default="prove,verify,select,refine",
+        help="Comma-separated per_turn.parquet stages retained for SFT.",
+    )
+    parser.add_argument("--prime_sft_validation_problem_count", type=int, default=33)
+    parser.add_argument("--prime_sft_seed", type=int, default=34521)
+    parser.add_argument("--prime_sft_prepare_timeout", type=int, default=7200)
+    parser.add_argument("--prime_sft_global_batch_size", type=int, default=0)
+    parser.add_argument("--prime_sft_micro_batch_size", type=int, default=1)
+    parser.add_argument("--prime_sft_nodes_per_fsdp_group", type=int, default=1)
+    parser.add_argument("--prime_sft_pack_function", choices=("cat", "stack"), default="cat")
+    parser.add_argument("--prime_sft_overflow_policy", choices=("truncate", "skip"), default="skip")
+    parser.add_argument(
+        "--prime_sft_loss_impl",
+        choices=("torch", "liger", "liger_fused", "quack_fused"),
+        default="liger_fused",
+    )
+    parser.add_argument("--prime_sft_eval_interval", type=int, default=50)
     parser.add_argument("--prime_env_id", default="math-env")
     parser.add_argument("--prime_env_name", default="math")
     parser.add_argument("--prime_math_dataset_name", default="mikasenghaas/Sanity-Test-R1D-1.5B")
@@ -1975,6 +2243,54 @@ def main(argv: list[str] | None = None) -> int:
     if args.wandb_mode:
         os.environ["WANDB_MODE"] = args.wandb_mode
     enable_system_nccl_preload_for_transformer_engine(args)
+
+    if args.prime_algorithm == "sft" or args.prime_component == "sft_trainer":
+        if args.prime_algorithm != "sft" or args.prime_component != "sft_trainer":
+            raise ValueError(
+                "Native Prime-RL SFT requires both --prime_algorithm sft and "
+                "--prime_component sft_trainer"
+            )
+        if not args.dataset_path:
+            raise ValueError("--dataset_path is required for native Prime-RL SFT")
+        coordination_id = (
+            args.prime_trainer_rdzv_id
+            or os.environ.get("OLMO_RUN_DIR_NAME")
+            or "prime-sft"
+        )
+        train_dataset_path, validation_dataset_path, manifest_path = (
+            prepare_distributed_per_turn_sft_cache(
+                Path(args.dataset_path),
+                Path(args.prime_sft_cache_dir),
+                node_rank=args.prime_trainer_node_rank,
+                coordination_id=coordination_id,
+                timeout_seconds=args.prime_sft_prepare_timeout,
+                log=log,
+                stages=parse_csv_list(args.prime_sft_stages),
+                validation_problem_count=args.prime_sft_validation_problem_count,
+                validation_seed=args.prime_sft_seed,
+                seq_len=args.max_seq_length,
+            )
+        )
+        config = build_prime_sft_config(
+            args,
+            output_dir,
+            train_dataset_path,
+            validation_dataset_path,
+        )
+        config_path = log_dir / "sft.toml"
+        write_prime_sft_config(config_path, config)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        log(f"Prime-RL SFT config written: {config_path}")
+        log(f"Prime-RL SFT data manifest: {manifest_path}")
+        log(f"Prime-RL SFT row counts: {manifest['row_counts']}")
+        log(f"Prime-RL SFT estimated overflow counts: {manifest['estimated_overflow_counts']}")
+        log(
+            "Prime-RL SFT batch: "
+            f"global_sequences={config['data']['batch_size']} "
+            f"seq_len={config['data']['seq_len']} "
+            f"tokens_per_step={config['data']['batch_size'] * config['data']['seq_len']}"
+        )
+        return run_distributed_sft_component(args, config, log_dir)
 
     if args.prime_component in ("policy_inference", "teacher_inference"):
         return run_prime_inference_component(args, log_dir, args.prime_component)

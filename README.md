@@ -10,6 +10,7 @@ Large model weights, checkpoints, caches, `.sif` files, W&B runs, and private cr
 |---|---|
 | `src/train.py` | Training wrapper used inside Docker/Singularity. It can fetch runtime updates and dispatch to SFT, Prime-RL, VERL, or operator mode. |
 | `src/train_engine_rl.py` | Prime-RL launcher and config writer for OLMo3Sink / OPD training. |
+| `src/prime_sft.py` | Streaming normalization and problem-level train/validation split for pre-rendered per-turn SFT data. |
 | `src/proof_opd_env.py` | Current OPD environment: proof generation, verifier, meta-verifier, optional refinement, and eval-only boxed-answer scoring. |
 | `src/olmo3_sink/` | OLMo3Sink model, vLLM adapter, FA3 sink attention, and conversion helpers. |
 | `operator_commands/` | Reproducible launch scripts for Modal or cluster/container runs. |
@@ -64,6 +65,22 @@ python scripts/bench_vllm_olmo3sink_speed.py \
 
 The script prints engine load time, actual prompt/output token counts, finish reasons, total decode tokens per second, per-request decode tokens per second, per-DP-rank metrics, aggregate DP throughput, and `nvidia-smi` snapshots.
 It also patches the isolated pinned vLLM target so optional FlashInfer/TileLang kernels are disabled by default and sets `VLLM_USE_DEEP_GEMM=0`; pass `--disable-flashinfer false --disable-tilelang false --use-deep-gemm true` if the Ai2 has those kernels working and you want to test that path.
+
+## Native SFT on Per-Turn Data
+
+The native Prime-RL SFT path trains directly on the pre-rendered `prove`,
+`verify`, `select`, and `refine` rows in `per_turn.parquet`. The 8-node H200
+launcher uses 131k context, HSDP, FP8 OLMo3Sink training, Liger fused cross
+entropy, cosine LR from `2e-7` to `3e-8`, validation every 50 steps, and full
+checkpoints every 100 steps:
+
+```bash
+export OLMO_RUN_DIR_NAME="prime_sft_per_turn_$(date -u +%Y%m%d_%H%M%S)"
+bash operator_commands/prime_rl_sft_8node_per_turn_ctx131072.sh
+```
+
+See [docs/prime_rl_sft.md](docs/prime_rl_sft.md) for data semantics, topology,
+attention selection, one-node overrides, and command-preview validation.
 
 ## Current Best OPD Pipeline: 4xH200, 20k Context
 

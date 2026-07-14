@@ -88,3 +88,44 @@ def test_policy_component_does_not_download_teacher(tmp_path: Path, monkeypatch)
 
     assert snapshot_calls == ["example/student"]
     assert args.prime_opd_teacher_model == "example/teacher"
+
+
+def test_sft_component_downloads_student_and_dataset_without_teacher(tmp_path: Path, monkeypatch) -> None:
+    snapshot_calls: list[str] = []
+
+    def fake_snapshot_download(*, repo_id: str, local_dir: str, **_kwargs) -> str:
+        snapshot_calls.append(repo_id)
+        write_fake_model(Path(local_dir))
+        return local_dir
+
+    dataset_source = tmp_path / "hub" / "per_turn.parquet"
+    dataset_source.parent.mkdir(parents=True)
+    dataset_source.write_bytes(b"dataset")
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda **_kwargs: str(dataset_source))
+
+    args, unknown = parse_args(
+        [
+            "--prime_component",
+            "sft_trainer",
+            "--prime_algorithm",
+            "sft",
+            "--model_hf_repo",
+            "example/student",
+            "--prime_opd_teacher_hf_repo",
+            "example/teacher",
+            "--dataset_hf_repo",
+            "example/proofs",
+            "--dataset_hf_filename",
+            "data/per_turn.parquet",
+            "--hf_assets_dir",
+            str(tmp_path / "assets"),
+        ]
+    )
+    assert unknown == []
+
+    resolve_runtime_assets(args)
+
+    assert snapshot_calls == ["example/student"]
+    assert Path(args.model_path, "config.json").is_file()
+    assert Path(args.dataset_path).read_bytes() == b"dataset"

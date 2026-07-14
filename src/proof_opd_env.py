@@ -1963,18 +1963,18 @@ class ProofOPDEnv(vf.MultiTurnEnv):
             "self_evaluation_excerpt": clipped_trace_text(
                 payload.get("self_evaluation", generation.get("self_evaluation", ""))
             ),
-            "verifier_raw_output_excerpt": clipped_trace_text(verifier.get("raw_output", "")),
-            "verifier_evaluation_excerpt": clipped_trace_text(
-                payload.get("verifier_evaluation", verifier.get("evaluation", ""))
-            ),
-            "meta_raw_output_excerpt": clipped_trace_text(meta.get("raw_output", "")),
-            "meta_analysis_excerpt": clipped_trace_text(payload.get("meta_analysis", meta.get("analysis", ""))),
-            "selector_raw_output_excerpt": clipped_trace_text(
-                payload.get("selector_raw_output", selector.get("raw_output", ""))
-            ),
-            "selector_visible_output": clipped_trace_text(
-                payload.get("selector_visible_output", selector.get("visible_output", ""))
-            ),
+            # "verifier_raw_output_excerpt": clipped_trace_text(verifier.get("raw_output", "")),
+            # "verifier_evaluation_excerpt": clipped_trace_text(
+            #     payload.get("verifier_evaluation", verifier.get("evaluation", ""))
+            # ),
+            # "meta_raw_output_excerpt": clipped_trace_text(meta.get("raw_output", "")),
+            # "meta_analysis_excerpt": clipped_trace_text(payload.get("meta_analysis", meta.get("analysis", ""))),
+            # "selector_raw_output_excerpt": clipped_trace_text(
+            #     payload.get("selector_raw_output", selector.get("raw_output", ""))
+            # ),
+            # "selector_visible_output": clipped_trace_text(
+            #     payload.get("selector_visible_output", selector.get("visible_output", ""))
+            # ),
         }
         return trace
 
