@@ -6,8 +6,8 @@ set -euo pipefail
 # Default NII layout:
 #   nodes 0..7: one external torchrun world, eight H200s per node
 #   HSDP:       one eight-GPU FSDP island per node, replicated across nodes
-#   microbatch: 2 packed sequences per GPU
-#   accumulation: 1 microstep (128 global sequences per optimizer step)
+#   microbatch: 1 packed sequence per GPU
+#   accumulation: 2 microsteps (128 global sequences per optimizer step)
 #
 # Useful overrides:
 #   PRIME_SFT_TRAIN_NODES=0                 one-node smoke test
@@ -247,13 +247,13 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" ]]; then
   fi
 fi
 
-MAX_STEPS="${PRIME_SFT_MAX_STEPS:-1000}"
+MAX_STEPS="${PRIME_SFT_MAX_STEPS:-900}"
 SEQ_LEN="${PRIME_SFT_SEQ_LEN:-131072}"
 TRAIN_GPUS_PER_NODE=8
 TRAIN_WORLD_SIZE=$((TRAIN_NODE_COUNT * TRAIN_GPUS_PER_NODE))
-MICRO_BATCH_SIZE="${PRIME_SFT_MICRO_BATCH_SIZE:-2}"
+MICRO_BATCH_SIZE="${PRIME_SFT_MICRO_BATCH_SIZE:-1}"
 CONTEXT_PARALLEL_SIZE="${PRIME_SFT_CONTEXT_PARALLEL_SIZE:-1}"
-REQUESTED_GRAD_ACCUM_STEPS="${PRIME_SFT_GRAD_ACCUM_STEPS:-1}"
+REQUESTED_GRAD_ACCUM_STEPS="${PRIME_SFT_GRAD_ACCUM_STEPS:-2}"
 
 for value_name in MICRO_BATCH_SIZE CONTEXT_PARALLEL_SIZE REQUESTED_GRAD_ACCUM_STEPS; do
   value="${!value_name}"
@@ -343,10 +343,10 @@ COMMAND=(
   --max_train_steps "${MAX_STEPS}"
   --max_seq_length "${SEQ_LEN}"
   --optimizer "${PRIME_SFT_OPTIMIZER:-te_fused_adamw}"
-  --learning_rate "${PRIME_SFT_LEARNING_RATE:-2e-7}"
+  --learning_rate "${PRIME_SFT_LEARNING_RATE:-4e-7}"
   --prime_lr_scheduler cosine
   --prime_lr_warmup_steps "${PRIME_SFT_LR_WARMUP_STEPS:-10}"
-  --prime_lr_min "${PRIME_SFT_MIN_LR:-3e-8}"
+  --prime_lr_min "${PRIME_SFT_MIN_LR:-5e-8}"
   --weight_decay "${PRIME_SFT_WEIGHT_DECAY:-0.1}"
   --max_grad_norm "${PRIME_SFT_MAX_GRAD_NORM:-1.0}"
   --prime_te_adamw_exp_avg_dtype bfloat16
@@ -388,7 +388,7 @@ COMMAND=(
   --prime_trainer_fp8 "${PRIME_SFT_FP8:-true}"
   --prime_trainer_compile "${PRIME_SFT_COMPILE:-true}"
   --prime_checkpoint_output_dir "${CHECKPOINT_ROOT}"
-  --prime_checkpoint_interval "${PRIME_SFT_CHECKPOINT_INTERVAL:-100}"
+  --prime_checkpoint_interval "${PRIME_SFT_CHECKPOINT_INTERVAL:-50}"
   --prime_checkpoint_keep_last "${PRIME_SFT_CHECKPOINT_KEEP_LAST:-20}"
   --prime_checkpoint_keep_interval "${PRIME_SFT_CHECKPOINT_KEEP_INTERVAL:-0}"
   --prime_checkpoint_weights_only true

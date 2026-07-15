@@ -46,17 +46,24 @@ Defaults:
 |---|---|
 | Context | 131,072 tokens |
 | Global batch | 128 packed sequences, 16,777,216 padded tokens/step |
-| Microbatch | 2 sequences/GPU |
-| Gradient accumulation | 1 microstep |
+| Microbatch | 1 sequence/GPU |
+| Gradient accumulation | 2 microsteps |
 | Parallelism | 8 nodes, one 8-GPU FSDP island/node, HSDP replicate=8, CP=1 |
 | Precision | FP8 linear training, BF16 optimization/reduction |
 | Loss | Liger fused linear cross entropy, assistant tokens only |
-| Optimizer | Transformer Engine fused AdamW |
-| LR | 2e-7, cosine, 10 warmup steps, 3e-8 minimum |
-| Steps | 1,000 |
+| Optimizer | Transformer Engine fused AdamW; BF16 states offloaded to CPU |
+| LR | 4e-7, cosine, 10 warmup steps, 5e-8 minimum |
+| Steps | 900 |
 | Validation | every 50 steps, never before step 1 |
-| Checkpoints | every 100 steps, keep the newest 20 weight-only checkpoints |
+| Checkpoints | every 50 steps, keep the newest 20 weight-only checkpoints |
 | W&B | online, shared run across every trainer process |
+
+Activation and optimizer offload remain enabled because the 131k sequence and
+optimizer states do not fit together on GPU. Keep microbatch 1 and use
+accumulation for larger global batches: each microbatch completes backward and
+releases its activation set before the next one begins. Microbatch 2 held two
+activation sets at once, doubled peak host RAM, and caused the NII container to
+be OOM-killed before its first step.
 
 The command requires the student checkpoint at
 `/tmp/models/opd-32b-deploy/opd-32b-deploy`. It downloads the public parquet to
@@ -77,7 +84,7 @@ not expose OLMo3's sliding-window argument.
 ## Smaller checks
 
 A one-node launch preserves the per-GPU microbatch and infers a global batch of
-16 with one accumulation microstep:
+16 with two accumulation microsteps:
 
 ```bash
 export PRIME_SFT_TRAIN_NODES=0
