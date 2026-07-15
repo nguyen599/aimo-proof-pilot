@@ -52,10 +52,10 @@ def test_hopper_preview_uses_magi_fa3_and_native_override(tmp_path: Path) -> Non
     assert "--prime_algorithm sft" in output
     assert "--prime_component sft_trainer" in output
     assert "--fetch-update" in output
-    assert "--prime_sft_global_batch_size 16" in output
+    assert "--prime_sft_global_batch_size 8" in output
     assert "--prime_sft_micro_batch_size 1" in output
     assert "--prime_trainer_optim_cpu_offload true" in output
-    assert "micro_batch=1 grad_accum=2 global_batch=16" in output
+    assert "micro_batch=1 grad_accum=1 global_batch=8" in output
 
     native_output = run_preview(
         tmp_path / "native",
@@ -66,17 +66,17 @@ def test_hopper_preview_uses_magi_fa3_and_native_override(tmp_path: Path) -> Non
     assert "attention=olmo3_sink_fa3_native" in native_output
 
 
-def test_eight_node_preview_uses_global_batch_128(tmp_path: Path) -> None:
+def test_eight_node_preview_uses_global_batch_64(tmp_path: Path) -> None:
     output = run_preview(
         tmp_path,
         gpu_name="NVIDIA H200",
         compute_cap="9.0",
         train_nodes="0,1,2,3,4,5,6,7",
     )
-    assert "--prime_sft_global_batch_size 128" in output
+    assert "--prime_sft_global_batch_size 64" in output
     assert "--prime_sft_micro_batch_size 1" in output
     assert "--prime_trainer_optim_cpu_offload true" in output
-    assert "micro_batch=1 grad_accum=2 global_batch=128" in output
+    assert "micro_batch=1 grad_accum=1 global_batch=64" in output
 
 
 def test_preview_enables_nemotron_mix(tmp_path: Path) -> None:

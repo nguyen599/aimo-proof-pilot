@@ -320,13 +320,13 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" ]]; then
   fi
 fi
 
-MAX_STEPS="${PRIME_SFT_MAX_STEPS:-900}"
+MAX_STEPS="${PRIME_SFT_MAX_STEPS:-800}"
 SEQ_LEN="${PRIME_SFT_SEQ_LEN:-131072}"
 TRAIN_GPUS_PER_NODE=8
 TRAIN_WORLD_SIZE=$((TRAIN_NODE_COUNT * TRAIN_GPUS_PER_NODE))
 MICRO_BATCH_SIZE="${PRIME_SFT_MICRO_BATCH_SIZE:-1}"
 CONTEXT_PARALLEL_SIZE="${PRIME_SFT_CONTEXT_PARALLEL_SIZE:-1}"
-REQUESTED_GRAD_ACCUM_STEPS="${PRIME_SFT_GRAD_ACCUM_STEPS:-2}"
+REQUESTED_GRAD_ACCUM_STEPS="${PRIME_SFT_GRAD_ACCUM_STEPS:-1}"
 
 for value_name in MICRO_BATCH_SIZE CONTEXT_PARALLEL_SIZE REQUESTED_GRAD_ACCUM_STEPS; do
   value="${!value_name}"
@@ -464,7 +464,7 @@ COMMAND=(
   --prime_trainer_fp8 "${PRIME_SFT_FP8:-true}"
   --prime_trainer_compile "${PRIME_SFT_COMPILE:-true}"
   --prime_checkpoint_output_dir "${CHECKPOINT_ROOT}"
-  --prime_checkpoint_interval "${PRIME_SFT_CHECKPOINT_INTERVAL:-50}"
+  --prime_checkpoint_interval "${PRIME_SFT_CHECKPOINT_INTERVAL:-25}"
   --prime_checkpoint_keep_last "${PRIME_SFT_CHECKPOINT_KEEP_LAST:-20}"
   --prime_checkpoint_keep_interval "${PRIME_SFT_CHECKPOINT_KEEP_INTERVAL:-0}"
   --prime_checkpoint_weights_only true
