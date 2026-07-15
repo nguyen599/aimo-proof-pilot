@@ -6,7 +6,8 @@ set -euo pipefail
 # Default NII layout:
 #   nodes 0..7: one external torchrun world, eight H200s per node
 #   HSDP:       one eight-GPU FSDP island per node, replicated across nodes
-#   batch:      64 packed 131072-token sequences per optimizer step
+#   microbatch: 2 packed sequences per GPU
+#   accumulation: 1 microstep (128 global sequences per optimizer step)
 #
 # Useful overrides:
 #   PRIME_SFT_TRAIN_NODES=0                 one-node smoke test
@@ -248,9 +249,50 @@ fi
 
 MAX_STEPS="${PRIME_SFT_MAX_STEPS:-1000}"
 SEQ_LEN="${PRIME_SFT_SEQ_LEN:-131072}"
-GLOBAL_BATCH_SIZE="${PRIME_SFT_GLOBAL_BATCH_SIZE:-64}"
-if [[ -z "${PRIME_SFT_GLOBAL_BATCH_SIZE:-}" && "${TRAIN_NODE_COUNT}" != "8" ]]; then
-  GLOBAL_BATCH_SIZE=$((TRAIN_NODE_COUNT * 8))
+TRAIN_GPUS_PER_NODE=8
+TRAIN_WORLD_SIZE=$((TRAIN_NODE_COUNT * TRAIN_GPUS_PER_NODE))
+MICRO_BATCH_SIZE="${PRIME_SFT_MICRO_BATCH_SIZE:-2}"
+CONTEXT_PARALLEL_SIZE="${PRIME_SFT_CONTEXT_PARALLEL_SIZE:-1}"
+REQUESTED_GRAD_ACCUM_STEPS="${PRIME_SFT_GRAD_ACCUM_STEPS:-1}"
+
+for value_name in MICRO_BATCH_SIZE CONTEXT_PARALLEL_SIZE REQUESTED_GRAD_ACCUM_STEPS; do
+  value="${!value_name}"
+  if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[prime-sft] ${value_name} must be a positive integer; got ${value}" >&2
+    exit 1
+  fi
+done
+
+if [[ -n "${PRIME_SFT_GLOBAL_BATCH_SIZE:-}" ]]; then
+  GLOBAL_BATCH_SIZE="${PRIME_SFT_GLOBAL_BATCH_SIZE}"
+else
+  derived_batch_numerator=$((TRAIN_WORLD_SIZE * MICRO_BATCH_SIZE * REQUESTED_GRAD_ACCUM_STEPS))
+  if (( derived_batch_numerator % CONTEXT_PARALLEL_SIZE != 0 )); then
+    echo "[prime-sft] world_size * micro_batch_size * grad_accum_steps must be divisible by CP" >&2
+    exit 1
+  fi
+  GLOBAL_BATCH_SIZE=$((derived_batch_numerator / CONTEXT_PARALLEL_SIZE))
+fi
+
+if ! [[ "${GLOBAL_BATCH_SIZE}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "[prime-sft] GLOBAL_BATCH_SIZE must be a positive integer; got ${GLOBAL_BATCH_SIZE}" >&2
+  exit 1
+fi
+if (( GLOBAL_BATCH_SIZE % MICRO_BATCH_SIZE != 0 )); then
+  echo "[prime-sft] global batch ${GLOBAL_BATCH_SIZE} must be divisible by microbatch ${MICRO_BATCH_SIZE}" >&2
+  exit 1
+fi
+accum_numerator=$((GLOBAL_BATCH_SIZE * CONTEXT_PARALLEL_SIZE))
+accum_denominator=$((TRAIN_WORLD_SIZE * MICRO_BATCH_SIZE))
+if (( accum_numerator % accum_denominator != 0 )); then
+  echo "[prime-sft] batch_size * CP must be divisible by world_size * micro_batch_size" >&2
+  exit 1
+fi
+GRAD_ACCUM_STEPS=$((accum_numerator / accum_denominator))
+if [[ -n "${PRIME_SFT_GRAD_ACCUM_STEPS:-}" ]] \
+    && (( GRAD_ACCUM_STEPS != REQUESTED_GRAD_ACCUM_STEPS )); then
+  echo "[prime-sft] explicit global batch resolves to grad_accum=${GRAD_ACCUM_STEPS}, requested ${REQUESTED_GRAD_ACCUM_STEPS}" >&2
+  exit 1
 fi
 
 WANDB_SHARED_RUN_ID="${PRIME_SFT_WANDB_RUN_ID:-$(printf '%s' "${RUN_NAME}" | sha256sum | cut -c1-32)}"
@@ -318,7 +360,7 @@ COMMAND=(
   --prime_sft_seed "${PRIME_SFT_SEED:-34521}"
   --prime_sft_prepare_timeout "${PRIME_SFT_PREPARE_TIMEOUT:-7200}"
   --prime_sft_global_batch_size "${GLOBAL_BATCH_SIZE}"
-  --prime_sft_micro_batch_size 1
+  --prime_sft_micro_batch_size "${MICRO_BATCH_SIZE}"
   --prime_sft_nodes_per_fsdp_group "${PRIME_SFT_NODES_PER_FSDP_GROUP:-1}"
   --prime_sft_pack_function cat
   --prime_sft_overflow_policy skip
@@ -326,8 +368,8 @@ COMMAND=(
   --prime_sft_eval_interval "${PRIME_SFT_EVAL_INTERVAL:-50}"
   --prime_sft_activation_offloading "${PRIME_SFT_ACTIVATION_OFFLOADING:-true}"
   --prime_sft_activation_offloading_max_inflight "${PRIME_SFT_ACTIVATION_OFFLOADING_MAX_INFLIGHT:-1}"
-  --prime_gpus_per_node 8
-  --prime_train_gpus 8
+  --prime_gpus_per_node "${TRAIN_GPUS_PER_NODE}"
+  --prime_train_gpus "${TRAIN_GPUS_PER_NODE}"
   --prime_trainer_num_nodes "${TRAIN_NODE_COUNT}"
   --prime_trainer_node_rank "${TRAINER_NODE_RANK}"
   --prime_trainer_master_addr "${MASTER_ADDR}"
@@ -337,7 +379,7 @@ COMMAND=(
   --prime_trainer_model_impl custom
   --prime_trainer_attn "${TRAINER_ATTN}"
   --prime_trainer_dp_replicate "${PRIME_SFT_DP_REPLICATE:-${TRAIN_NODE_COUNT}}"
-  --prime_trainer_context_parallel_size 1
+  --prime_trainer_context_parallel_size "${CONTEXT_PARALLEL_SIZE}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
   --prime_trainer_optim_cpu_offload "${PRIME_SFT_OPTIM_CPU_OFFLOAD:-true}"
@@ -358,7 +400,7 @@ COMMAND=(
 
 echo "[prime-sft] run=${RUN_NAME} node=${NODE_LABEL} trainer_rank=${TRAINER_NODE_RANK}/${TRAIN_NODE_COUNT} host=${HOST_NAME} ip=${HOST_IP}"
 echo "[prime-sft] master=${MASTER_ADDR}:${MASTER_PORT} model=${MODEL_PATH} dataset=${DATASET_PATH}"
-echo "[prime-sft] seq_len=${SEQ_LEN} global_batch=${GLOBAL_BATCH_SIZE} tokens_per_step=$((SEQ_LEN * GLOBAL_BATCH_SIZE))"
+echo "[prime-sft] seq_len=${SEQ_LEN} world_size=${TRAIN_WORLD_SIZE} micro_batch=${MICRO_BATCH_SIZE} grad_accum=${GRAD_ACCUM_STEPS} global_batch=${GLOBAL_BATCH_SIZE} tokens_per_step=$((SEQ_LEN * GLOBAL_BATCH_SIZE))"
 
 if [[ "${PRIME_COMMAND_PREVIEW:-0}" == "1" ]]; then
   printf '[prime-sft] command preview:'

@@ -45,8 +45,9 @@ Defaults:
 | Setting | Value |
 |---|---|
 | Context | 131,072 tokens |
-| Global batch | 64 packed sequences, 8,388,608 padded tokens/step |
-| Microbatch | 1 sequence/GPU |
+| Global batch | 128 packed sequences, 16,777,216 padded tokens/step |
+| Microbatch | 2 sequences/GPU |
+| Gradient accumulation | 1 microstep |
 | Parallelism | 8 nodes, one 8-GPU FSDP island/node, HSDP replicate=8, CP=1 |
 | Precision | FP8 linear training, BF16 optimization/reduction |
 | Loss | Liger fused linear cross entropy, assistant tokens only |
@@ -54,7 +55,7 @@ Defaults:
 | LR | 2e-7, cosine, 10 warmup steps, 3e-8 minimum |
 | Steps | 1,000 |
 | Validation | every 50 steps, never before step 1 |
-| Checkpoints | every 100 steps, keep the newest two, including optimizer state |
+| Checkpoints | every 100 steps, keep the newest 20 weight-only checkpoints |
 | W&B | online, shared run across every trainer process |
 
 The command requires the student checkpoint at
@@ -75,7 +76,8 @@ not expose OLMo3's sliding-window argument.
 
 ## Smaller checks
 
-A one-node launch preserves the per-GPU batch and infers a global batch of 8:
+A one-node launch preserves the per-GPU microbatch and infers a global batch of
+16 with one accumulation microstep:
 
 ```bash
 export PRIME_SFT_TRAIN_NODES=0
