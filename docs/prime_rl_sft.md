@@ -82,19 +82,19 @@ Defaults:
 | Parallelism | 8 nodes, one 8-GPU FSDP island/node, HSDP replicate=8, CP=1 |
 | Precision | FP8 linear training, BF16 optimization/reduction |
 | Loss | Liger fused linear cross entropy, assistant tokens only |
-| Optimizer | Transformer Engine fused AdamW; BF16 states offloaded to CPU |
+| Optimizer | Transformer Engine fused AdamW; BF16 states kept on GPU |
 | LR | 4e-7, cosine, 10 warmup steps, 5e-8 minimum |
 | Steps | 800 |
 | Validation | every 50 steps, never before step 1 |
 | Checkpoints | every 25 steps, keep the newest 20 weight-only checkpoints |
 | W&B | online, shared run across every trainer process |
 
-Activation and optimizer offload remain enabled because the 131k sequence and
-optimizer states do not fit together on GPU. Keep microbatch 1 and use
-accumulation for larger global batches: each microbatch completes backward and
-releases its activation set before the next one begins. Microbatch 2 held two
-activation sets at once, doubled peak host RAM, and caused the NII container to
-be OOM-killed before its first step.
+Activation offload remains enabled so the BF16 optimizer states can stay on
+GPU. Set `PRIME_SFT_OPTIM_CPU_OFFLOAD=true` only if this configuration exhausts
+VRAM. Keep microbatch 1 and use accumulation for larger global batches: each
+microbatch completes backward and releases its activation set before the next
+one begins. Microbatch 2 held two activation sets at once, doubled peak host
+RAM, and caused the NII container to be OOM-killed before its first step.
 
 The command requires the student checkpoint at
 `/tmp/models/opd-32b-deploy/opd-32b-deploy`. It downloads each public source

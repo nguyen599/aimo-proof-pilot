@@ -458,7 +458,7 @@ COMMAND=(
   --prime_trainer_context_parallel_size "${CONTEXT_PARALLEL_SIZE}"
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
-  --prime_trainer_optim_cpu_offload "${PRIME_SFT_OPTIM_CPU_OFFLOAD:-true}"
+  --prime_trainer_optim_cpu_offload "${PRIME_SFT_OPTIM_CPU_OFFLOAD:-false}"
   --prime_trainer_optimization_dtype bfloat16
   --prime_trainer_reduce_dtype bfloat16
   --prime_trainer_fp8 "${PRIME_SFT_FP8:-true}"

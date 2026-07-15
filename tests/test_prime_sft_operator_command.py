@@ -54,7 +54,7 @@ def test_hopper_preview_uses_magi_fa3_and_native_override(tmp_path: Path) -> Non
     assert "--fetch-update" in output
     assert "--prime_sft_global_batch_size 8" in output
     assert "--prime_sft_micro_batch_size 1" in output
-    assert "--prime_trainer_optim_cpu_offload true" in output
+    assert "--prime_trainer_optim_cpu_offload false" in output
     assert "micro_batch=1 grad_accum=1 global_batch=8" in output
 
     native_output = run_preview(
@@ -75,7 +75,7 @@ def test_eight_node_preview_uses_global_batch_64(tmp_path: Path) -> None:
     )
     assert "--prime_sft_global_batch_size 64" in output
     assert "--prime_sft_micro_batch_size 1" in output
-    assert "--prime_trainer_optim_cpu_offload true" in output
+    assert "--prime_trainer_optim_cpu_offload false" in output
     assert "micro_batch=1 grad_accum=1 global_batch=64" in output
 
 
