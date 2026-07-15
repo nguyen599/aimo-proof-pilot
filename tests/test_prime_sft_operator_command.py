@@ -79,6 +79,14 @@ def test_eight_node_preview_uses_global_batch_128(tmp_path: Path) -> None:
     assert "micro_batch=1 grad_accum=2 global_batch=128" in output
 
 
+def test_preview_enables_nemotron_mix(tmp_path: Path) -> None:
+    output = run_preview(tmp_path, gpu_name="NVIDIA H200", compute_cap="9.0")
+    assert "--prime_sft_nemotron_dataset_path" in output
+    assert "/tmp/data/Nemotron-Math-Proofs-v2/data/train.jsonl" in output
+    assert "--prime_sft_nemotron_subsets" in output
+    assert r"proof\,verification\,meta-verification" in output
+
+
 def test_blackwell_preview_forces_fa2(tmp_path: Path) -> None:
     output = run_preview(
         tmp_path,
@@ -111,4 +119,6 @@ def test_explicit_batch_and_accumulation_must_agree(tmp_path: Path) -> None:
         env=env,
     )
     assert result.returncode != 0
-    assert "explicit global batch resolves to grad_accum=8, requested 2" in result.stderr
+    assert (
+        "explicit global batch resolves to grad_accum=8, requested 2" in result.stderr
+    )

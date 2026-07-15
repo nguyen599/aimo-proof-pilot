@@ -216,14 +216,29 @@ export RUNTIME_FETCH_COORDINATION_ID="${RUN_NAME}"
 MODEL_PATH="${PRIME_SFT_MODEL_PATH:-/tmp/models/opd-32b-deploy/opd-32b-deploy}"
 DATASET_PATH="${PRIME_SFT_DATASET_PATH:-/tmp/data/opd-v2-test/data/per_turn.parquet}"
 DATASET_URL="${PRIME_SFT_DATASET_URL:-https://huggingface.co/datasets/ycchen/dsflash-proof-distill-v2-test/resolve/main/data/per_turn.parquet?download=true}"
+NEMOTRON_ENABLED="${PRIME_SFT_NEMOTRON_ENABLED:-true}"
+NEMOTRON_DATASET_DIR="${PRIME_SFT_NEMOTRON_DATASET_DIR:-/tmp/data/Nemotron-Math-Proofs-v2}"
+NEMOTRON_DATASET_PATH="${PRIME_SFT_NEMOTRON_DATASET_PATH:-${NEMOTRON_DATASET_DIR}/data/train.jsonl}"
+NEMOTRON_REPO="${PRIME_SFT_NEMOTRON_REPO:-nvidia/Nemotron-Math-Proofs-v2}"
+NEMOTRON_REVISION="${PRIME_SFT_NEMOTRON_REVISION:-7665d7f1d006fd89aa852a9dab8060c60b63f814}"
+NEMOTRON_FILENAME="${PRIME_SFT_NEMOTRON_FILENAME:-data/train.jsonl}"
+NEMOTRON_URL="${PRIME_SFT_NEMOTRON_URL:-https://huggingface.co/datasets/${NEMOTRON_REPO}/resolve/${NEMOTRON_REVISION}/${NEMOTRON_FILENAME}?download=true}"
+NEMOTRON_EXPECTED_SIZE="${PRIME_SFT_NEMOTRON_EXPECTED_SIZE:-17131378160}"
+case "${NEMOTRON_ENABLED,,}" in
+  1|true|yes|on) NEMOTRON_ENABLED=true ;;
+  0|false|no|off) NEMOTRON_ENABLED=false; NEMOTRON_DATASET_PATH="" ;;
+  *) echo "[prime-sft] invalid PRIME_SFT_NEMOTRON_ENABLED=${NEMOTRON_ENABLED}" >&2; exit 1 ;;
+esac
 
 # Resolve the public parquet once before all eight train wrappers enter their
 # asset phase. This avoids eight simultaneous 1.6 GiB downloads to one path.
 DATASET_READY="${RENDEZVOUS_DIR}/dataset.ready"
 DATASET_ERROR="${RENDEZVOUS_DIR}/dataset.error"
+NEMOTRON_READY="${RENDEZVOUS_DIR}/nemotron-dataset.ready"
+NEMOTRON_ERROR="${RENDEZVOUS_DIR}/nemotron-dataset.error"
 if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" ]]; then
   if [[ "${NODE_LABEL}" == "${TRAIN_NODE}" ]]; then
-    rm -f "${DATASET_READY}" "${DATASET_ERROR}"
+    rm -f "${DATASET_READY}" "${DATASET_ERROR}" "${NEMOTRON_READY}" "${NEMOTRON_ERROR}"
     if [[ ! -s "${DATASET_PATH}" ]]; then
       mkdir -p "$(dirname "${DATASET_PATH}")"
       DATASET_TMP="${DATASET_PATH}.tmp-$$"
@@ -236,6 +251,51 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" ]]; then
       mv "${DATASET_TMP}" "${DATASET_PATH}"
     fi
     printf '%s\n' "${DATASET_PATH}" > "${DATASET_READY}"
+    if [[ "${NEMOTRON_ENABLED}" == "true" ]]; then
+      NEMOTRON_SIZE="$(stat -c %s "${NEMOTRON_DATASET_PATH}" 2>/dev/null || echo 0)"
+      if [[ -s "${NEMOTRON_DATASET_PATH}" ]] \
+          && [[ "${NEMOTRON_EXPECTED_SIZE}" != "0" ]] \
+          && [[ "${NEMOTRON_SIZE}" != "${NEMOTRON_EXPECTED_SIZE}" ]]; then
+        printf 'Nemotron dataset has unexpected size: path=%s actual=%s expected=%s\n' \
+          "${NEMOTRON_DATASET_PATH}" "${NEMOTRON_SIZE}" "${NEMOTRON_EXPECTED_SIZE}" \
+          > "${NEMOTRON_ERROR}"
+        exit 1
+      fi
+      if [[ ! -s "${NEMOTRON_DATASET_PATH}" ]]; then
+        mkdir -p "$(dirname "${NEMOTRON_DATASET_PATH}")"
+        NEMOTRON_TMP="${NEMOTRON_DATASET_PATH}.part"
+        NEMOTRON_COMPLETE=false
+        for attempt in {1..12}; do
+          echo "[prime-sft] downloading Nemotron attempt=${attempt} resume_bytes=$(stat -c %s "${NEMOTRON_TMP}" 2>/dev/null || echo 0)"
+          if curl -fL --retry 12 --retry-all-errors --retry-delay 2 \
+              --connect-timeout 30 --speed-time 120 --speed-limit 1024 \
+              -C - -o "${NEMOTRON_TMP}" "${NEMOTRON_URL}"; then
+            NEMOTRON_TMP_SIZE="$(stat -c %s "${NEMOTRON_TMP}")"
+            if [[ "${NEMOTRON_EXPECTED_SIZE}" == "0" ]] \
+                || [[ "${NEMOTRON_TMP_SIZE}" == "${NEMOTRON_EXPECTED_SIZE}" ]]; then
+              NEMOTRON_COMPLETE=true
+              break
+            fi
+            echo "[prime-sft] Nemotron size mismatch after download: actual=${NEMOTRON_TMP_SIZE} expected=${NEMOTRON_EXPECTED_SIZE}" >&2
+          fi
+          sleep 5
+        done
+        if [[ "${NEMOTRON_COMPLETE}" != "true" ]]; then
+          printf 'Nemotron dataset download failed: %s@%s/%s partial=%s\n' \
+            "${NEMOTRON_REPO}" "${NEMOTRON_REVISION}" "${NEMOTRON_FILENAME}" \
+            "$(stat -c %s "${NEMOTRON_TMP}" 2>/dev/null || echo 0)" \
+            > "${NEMOTRON_ERROR}"
+          exit 1
+        fi
+        mv "${NEMOTRON_TMP}" "${NEMOTRON_DATASET_PATH}"
+      fi
+      if [[ ! -s "${NEMOTRON_DATASET_PATH}" ]]; then
+        printf 'Nemotron dataset is missing after download: %s\n' \
+          "${NEMOTRON_DATASET_PATH}" > "${NEMOTRON_ERROR}"
+        exit 1
+      fi
+      printf '%s\n' "${NEMOTRON_DATASET_PATH}" > "${NEMOTRON_READY}"
+    fi
   else
     while [[ ! -s "${DATASET_READY}" || ! -s "${DATASET_PATH}" ]]; do
       if [[ -s "${DATASET_ERROR}" ]]; then
@@ -244,6 +304,15 @@ if [[ "${PRIME_COMMAND_PREVIEW:-0}" != "1" ]]; then
       fi
       sleep 2
     done
+    if [[ "${NEMOTRON_ENABLED}" == "true" ]]; then
+      while [[ ! -s "${NEMOTRON_READY}" || ! -s "${NEMOTRON_DATASET_PATH}" ]]; do
+        if [[ -s "${NEMOTRON_ERROR}" ]]; then
+          cat "${NEMOTRON_ERROR}" >&2
+          exit 1
+        fi
+        sleep 2
+      done
+    fi
   fi
   if [[ ! -f "${MODEL_PATH}/config.json" ]]; then
     echo "[prime-sft] model is missing config.json: ${MODEL_PATH}" >&2
@@ -360,6 +429,9 @@ COMMAND=(
   --prime_te_adamw_store_param_remainders false
   --prime_sft_cache_dir "${CACHE_ROOT}"
   --prime_sft_stages "${PRIME_SFT_STAGES:-prove,verify,select,refine}"
+  --prime_sft_nemotron_dataset_path "${NEMOTRON_DATASET_PATH}"
+  --prime_sft_nemotron_subsets "${PRIME_SFT_NEMOTRON_SUBSETS:-proof,verification,meta-verification}"
+  --prime_sft_nemotron_exclude_validation_overlap "${PRIME_SFT_NEMOTRON_EXCLUDE_VALIDATION_OVERLAP:-true}"
   --prime_sft_validation_problem_count "${PRIME_SFT_VALIDATION_PROBLEMS:-33}"
   --prime_sft_seed "${PRIME_SFT_SEED:-34521}"
   --prime_sft_prepare_timeout "${PRIME_SFT_PREPARE_TIMEOUT:-7200}"
@@ -403,7 +475,7 @@ COMMAND=(
 )
 
 echo "[prime-sft] run=${RUN_NAME} node=${NODE_LABEL} trainer_rank=${TRAINER_NODE_RANK}/${TRAIN_NODE_COUNT} host=${HOST_NAME} ip=${HOST_IP}"
-echo "[prime-sft] master=${MASTER_ADDR}:${MASTER_PORT} model=${MODEL_PATH} dataset=${DATASET_PATH}"
+echo "[prime-sft] master=${MASTER_ADDR}:${MASTER_PORT} model=${MODEL_PATH} dataset=${DATASET_PATH} nemotron_dataset=${NEMOTRON_DATASET_PATH:-disabled}"
 echo "[prime-sft] seq_len=${SEQ_LEN} world_size=${TRAIN_WORLD_SIZE} micro_batch=${MICRO_BATCH_SIZE} grad_accum=${GRAD_ACCUM_STEPS} global_batch=${GLOBAL_BATCH_SIZE} tokens_per_step=$((SEQ_LEN * GLOBAL_BATCH_SIZE))"
 
 if [[ "${PRIME_COMMAND_PREVIEW:-0}" == "1" ]]; then

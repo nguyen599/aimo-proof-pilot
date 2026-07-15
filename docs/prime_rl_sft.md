@@ -1,14 +1,20 @@
-# Prime-RL SFT on `per_turn.parquet`
+# Prime-RL SFT on proof-pipeline turns
 
-This path trains OLMo3Sink directly on the pre-rendered proof-pipeline turns in
-`ycchen/dsflash-proof-distill-v2-test/data/per_turn.parquet`. It is offline SFT:
-there is no policy rollout server, teacher server, verifier environment, or OPD
-KL loss.
+This path trains OLMo3Sink directly on pre-rendered proof-pipeline turns. The
+default production mix contains:
+
+- `ycchen/dsflash-proof-distill-v2-test/data/per_turn.parquet`
+- `nvidia/Nemotron-Math-Proofs-v2/data/train.jsonl`
+
+It is offline SFT: there is no policy rollout server, teacher server, verifier
+environment, or OPD KL loss.
 
 ## Data conversion
 
-`src/prime_sft.py` streams the source parquet and creates a fingerprinted cache
-with `train.parquet`, `validation.parquet`, and `manifest.json`.
+`src/prime_sft.py` streams both sources and creates a fingerprinted cache with
+`train.parquet`, `validation.parquet`, and `manifest.json`. Conversion holds
+only small Arrow batches in RAM; it does not materialize the 17.1 GB Nemotron
+JSONL as Python objects.
 
 - Natural source proportions are preserved for `prove`, `verify`, `select`, and
   `refine`; `plain` is excluded.
@@ -16,19 +22,44 @@ with `train.parquet`, `validation.parquet`, and `manifest.json`.
 - The assistant target keeps `reasoning_content` and `content` separate. The
   DeepSeek-v4 tokenizer template renders them as the thinking block and final
   answer.
+- Nemotron's native `messages` are retained without prompt or answer rewriting.
+  Its subsets map as `proof -> prove`, `verification -> verify`, and
+  `meta-verification -> meta`.
 - Validation holds out all rows belonging to 33 deterministic `problem_id`
   values, preventing turns from one problem appearing in both splits.
+- Nemotron rows whose normalized problem text exactly matches a held-out
+  `per_turn` validation problem are excluded from training by default.
 - Rows whose rendered length exceeds the configured context are skipped at
-  tokenization time, not truncated. The manifest records a source-token-count
-  estimate of these rows.
+  tokenization time, not truncated. Prime-RL reports these through its overflow
+  metrics; the source-audit script provides a deterministic preflight estimate.
 - On a multi-node launch, trainer rank 0 performs conversion once and the other
   nodes wait for the shared cache marker.
 
-For the current source snapshot this produces 72,989 training rows and 1,036
-validation rows. The held-out split contains 33 problems, and the train split
-contains the other 2,146. Source token counts estimate 366 over-context train
-rows and three over-context validation rows; runtime tokenization is the final
-authority for skipping them.
+The pinned Nemotron revision is
+`7665d7f1d006fd89aa852a9dab8060c60b63f814`. Its dataset card reports 82,737
+rows and approximately 5.0 billion tokens: 24,696 proof, 28,865 verification,
+and 29,176 meta-verification rows. The selected `per_turn` source contributes
+74,025 rows before its validation split. Runtime tokenization remains the final
+authority for context-overflow skipping.
+
+The full node-side audit found valid two-message `user -> assistant` structure
+for all 82,737 rows, no nonempty tool payloads, and 5,751 distinct normalized
+problem texts. Every assistant message has a separate `reasoning_content` trace;
+the final `content` contains the proof, verification, or meta-verification
+answer. With the production tokenizer, a deterministic 256-row sample had a
+median rendered length of 45,070 tokens and 11 rows (4.30%) above the 131,072
+token limit. The overflow was concentrated in very long proof reasoning traces.
+
+Run the streaming source audit on a node after download:
+
+```bash
+python scripts/analyze_nemotron_math_proofs_v2.py \
+  /tmp/data/Nemotron-Math-Proofs-v2/data/train.jsonl \
+  --output /tmp/data/Nemotron-Math-Proofs-v2/analysis.json \
+  --tokenizer /tmp/models/opd-32b-deploy/opd-32b-deploy \
+  --token-sample-size 256 \
+  --seq-len 131072
+```
 
 ## Production launch
 
@@ -66,10 +97,19 @@ activation sets at once, doubled peak host RAM, and caused the NII container to
 be OOM-killed before its first step.
 
 The command requires the student checkpoint at
-`/tmp/models/opd-32b-deploy/opd-32b-deploy`. It downloads the public parquet to
-`/tmp/data/opd-v2-test/data/per_turn.parquet` once when it is missing. Runtime
-repositories, normalized data, output, and dependency overlays live below the
-run-specific shared root in `/tmp/prime-sft-runs/`.
+`/tmp/models/opd-32b-deploy/opd-32b-deploy`. It downloads each public source
+once when missing. Nemotron is pinned to the revision above and stored at
+`/tmp/data/Nemotron-Math-Proofs-v2/data/train.jsonl`. Runtime repositories,
+normalized data, output, and dependency overlays live below the run-specific
+shared root in `/tmp/prime-sft-runs/`.
+
+Disable or narrow the second source without changing code:
+
+```bash
+export PRIME_SFT_NEMOTRON_ENABLED=false
+# Or retain only selected subsets:
+export PRIME_SFT_NEMOTRON_SUBSETS=proof,verification
+```
 
 Hopper defaults to Magi FA3 sink attention. The original native FA3 path remains
 available for parity checks:

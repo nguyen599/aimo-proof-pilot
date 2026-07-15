@@ -1877,6 +1877,28 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         default="prove,verify,select,refine",
         help="Comma-separated per_turn.parquet stages retained for SFT.",
     )
+    parser.add_argument(
+        "--prime_sft_nemotron_dataset_path",
+        default="",
+        help=(
+            "Optional local nvidia/Nemotron-Math-Proofs-v2 train.jsonl path. Its native "
+            "messages are mixed into the normalized SFT training split."
+        ),
+    )
+    parser.add_argument(
+        "--prime_sft_nemotron_subsets",
+        default="proof,verification,meta-verification",
+        help="Comma-separated Nemotron-Math-Proofs-v2 subsets retained for SFT.",
+    )
+    parser.add_argument(
+        "--prime_sft_nemotron_exclude_validation_overlap",
+        type=parse_bool,
+        default=True,
+        help=(
+            "Exclude Nemotron rows whose normalized problem text exactly matches a held-out "
+            "per-turn validation problem."
+        ),
+    )
     parser.add_argument("--prime_sft_validation_problem_count", type=int, default=33)
     parser.add_argument("--prime_sft_seed", type=int, default=34521)
     parser.add_argument("--prime_sft_prepare_timeout", type=int, default=7200)
@@ -2280,6 +2302,15 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=args.prime_sft_prepare_timeout,
                 log=log,
                 stages=parse_csv_list(args.prime_sft_stages),
+                nemotron_source_path=(
+                    Path(args.prime_sft_nemotron_dataset_path)
+                    if args.prime_sft_nemotron_dataset_path
+                    else None
+                ),
+                nemotron_subsets=parse_csv_list(args.prime_sft_nemotron_subsets),
+                exclude_nemotron_validation_overlap=(
+                    args.prime_sft_nemotron_exclude_validation_overlap
+                ),
                 validation_problem_count=args.prime_sft_validation_problem_count,
                 validation_seed=args.prime_sft_seed,
                 seq_len=args.max_seq_length,
@@ -2297,6 +2328,15 @@ def main(argv: list[str] | None = None) -> int:
         log(f"Prime-RL SFT config written: {config_path}")
         log(f"Prime-RL SFT data manifest: {manifest_path}")
         log(f"Prime-RL SFT row counts: {manifest['row_counts']}")
+        log(
+            f"Prime-RL SFT row counts by source: "
+            f"{manifest.get('row_counts_by_source', {})}"
+        )
+        if manifest.get("nemotron_validation_overlap_counts"):
+            log(
+                "Prime-RL SFT Nemotron rows excluded for validation overlap: "
+                f"{manifest['nemotron_validation_overlap_counts']}"
+            )
         log(f"Prime-RL SFT estimated overflow counts: {manifest['estimated_overflow_counts']}")
         log(
             "Prime-RL SFT batch: "
