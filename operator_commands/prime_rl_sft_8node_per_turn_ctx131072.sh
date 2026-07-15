@@ -305,7 +305,7 @@ COMMAND=(
   --prime_lr_scheduler cosine
   --prime_lr_warmup_steps "${PRIME_SFT_LR_WARMUP_STEPS:-10}"
   --prime_lr_min "${PRIME_SFT_MIN_LR:-3e-8}"
-  --weight_decay "${PRIME_SFT_WEIGHT_DECAY:-0.0}"
+  --weight_decay "${PRIME_SFT_WEIGHT_DECAY:-0.1}"
   --max_grad_norm "${PRIME_SFT_MAX_GRAD_NORM:-1.0}"
   --prime_te_adamw_exp_avg_dtype bfloat16
   --prime_te_adamw_exp_avg_sq_dtype bfloat16
@@ -324,6 +324,8 @@ COMMAND=(
   --prime_sft_overflow_policy skip
   --prime_sft_loss_impl liger_fused
   --prime_sft_eval_interval "${PRIME_SFT_EVAL_INTERVAL:-50}"
+  --prime_sft_activation_offloading "${PRIME_SFT_ACTIVATION_OFFLOADING:-true}"
+  --prime_sft_activation_offloading_max_inflight "${PRIME_SFT_ACTIVATION_OFFLOADING_MAX_INFLIGHT:-1}"
   --prime_gpus_per_node 8
   --prime_train_gpus 8
   --prime_trainer_num_nodes "${TRAIN_NODE_COUNT}"
@@ -338,16 +340,16 @@ COMMAND=(
   --prime_trainer_context_parallel_size 1
   --prime_trainer_cp_style ulysses
   --prime_trainer_fsdp_cpu_offload false
-  --prime_trainer_optim_cpu_offload false
+  --prime_trainer_optim_cpu_offload "${PRIME_SFT_OPTIM_CPU_OFFLOAD:-true}"
   --prime_trainer_optimization_dtype bfloat16
   --prime_trainer_reduce_dtype bfloat16
   --prime_trainer_fp8 "${PRIME_SFT_FP8:-true}"
   --prime_trainer_compile "${PRIME_SFT_COMPILE:-true}"
   --prime_checkpoint_output_dir "${CHECKPOINT_ROOT}"
   --prime_checkpoint_interval "${PRIME_SFT_CHECKPOINT_INTERVAL:-100}"
-  --prime_checkpoint_keep_last "${PRIME_SFT_CHECKPOINT_KEEP_LAST:-2}"
+  --prime_checkpoint_keep_last "${PRIME_SFT_CHECKPOINT_KEEP_LAST:-20}"
   --prime_checkpoint_keep_interval "${PRIME_SFT_CHECKPOINT_KEEP_INTERVAL:-0}"
-  --prime_checkpoint_weights_only false
+  --prime_checkpoint_weights_only true
   --with_tracking
   --wandb_mode online
   --wandb_project "${WANDB_PROJECT}"

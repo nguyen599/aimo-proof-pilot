@@ -94,6 +94,10 @@ def test_sft_config_uses_external_hsdp_and_fused_loss(tmp_path: Path) -> None:
             "olmo3_sink_fa3",
             "--prime_trainer_fp8",
             "true",
+            "--prime_sft_activation_offloading",
+            "true",
+            "--prime_sft_activation_offloading_max_inflight",
+            "1",
             "--optimizer",
             "te_fused_adamw",
             "--learning_rate",
@@ -126,7 +130,10 @@ def test_sft_config_uses_external_hsdp_and_fused_loss(tmp_path: Path) -> None:
     assert loaded["model"]["impl"] == "custom"
     assert loaded["model"]["attn"] == "olmo3_sink_fa3"
     assert loaded["model"]["fp8"] is True
-    assert loaded["model"]["ac_offloading"] == "None"
+    assert loaded["model"]["ac_offloading"] == {
+        "pin_memory": True,
+        "max_inflight_activations": 1,
+    }
     assert loaded["data"]["batch_size"] == 64
     assert loaded["data"]["seq_len"] == 131072
     assert loaded["data"]["overflow_policy"] == "skip"

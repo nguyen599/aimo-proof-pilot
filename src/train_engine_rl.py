@@ -1188,7 +1188,14 @@ def build_prime_sft_config(
             "cp_style": args.prime_trainer_cp_style,
             "fp8": args.prime_trainer_fp8,
             "compile": None if args.prime_trainer_compile else "None",
-            "ac_offloading": "None",
+            "ac_offloading": (
+                {
+                    "pin_memory": True,
+                    "max_inflight_activations": args.prime_sft_activation_offloading_max_inflight,
+                }
+                if args.prime_sft_activation_offloading
+                else "None"
+            ),
         },
         "tokenizer": {
             "name": args.tokenizer_path or args.model_path,
@@ -1884,6 +1891,13 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         default="liger_fused",
     )
     parser.add_argument("--prime_sft_eval_interval", type=int, default=50)
+    parser.add_argument("--prime_sft_activation_offloading", type=parse_bool, default=False)
+    parser.add_argument(
+        "--prime_sft_activation_offloading_max_inflight",
+        type=int,
+        default=1,
+        help="Maximum number of SFT activations kept in flight while offloading to CPU.",
+    )
     parser.add_argument("--prime_env_id", default="math-env")
     parser.add_argument("--prime_env_name", default="math")
     parser.add_argument("--prime_math_dataset_name", default="mikasenghaas/Sanity-Test-R1D-1.5B")
