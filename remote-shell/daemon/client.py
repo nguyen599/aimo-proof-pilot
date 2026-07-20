@@ -8,6 +8,7 @@ Run it (foreground, or under nohup / tmux / systemd):
     export HF_TOKEN="hf_..."                       # token with access to the private Space (this is the auth)
     export CLIENT_ID="$(hostname)"                 # how it shows up in the UI (optional)
     export RELAY_SPACE="imo2026-challenge/control-panel-nguyen"  # optional
+    export RELAY_MEMBER="vu"                       # optional team routing metadata
     python client.py
 
 The relay Space repo id defaults to imo2026-challenge/control-panel, but can be
@@ -24,6 +25,7 @@ huggingface.co AND <user>-<space>.hf.space), never binds a port, and disables
 all telemetry by default.
 """
 
+import json
 import os
 
 # Disable all phone-home before importing gradio_client / huggingface_hub, so a
@@ -79,6 +81,18 @@ SPACE = (
 )
 HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
 CLIENT_ID = os.environ.get("CLIENT_ID") or _default_client_id()
+RELAY_MEMBER = (
+    os.environ.get("RELAY_MEMBER")
+    or os.environ.get("TEAM_MEMBER")
+    or ""
+).strip().lower()
+NODE_RANK = (
+    os.environ.get("AIMO_NODE_RANK")
+    or os.environ.get("GLOBAL_RANK")
+    or os.environ.get("NODE_RANK")
+    or os.environ.get("SLURM_NODEID")
+    or ""
+).strip()
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "5"))
 DEFAULT_TIMEOUT = int(os.environ.get("CMD_TIMEOUT", "120"))
 MAX_OUTPUT_CHARS = 200_000
@@ -311,7 +325,16 @@ def _make_client() -> Client:
 
 
 def _meta() -> str:
-    return f"{os.uname().sysname} {os.uname().release} pid={os.getpid()}"
+    payload = {
+        "system": os.uname().sysname,
+        "release": os.uname().release,
+        "pid": os.getpid(),
+    }
+    if RELAY_MEMBER:
+        payload["member"] = RELAY_MEMBER
+    if NODE_RANK.isdigit():
+        payload["node_rank"] = int(NODE_RANK)
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
 def connect() -> Client:
@@ -469,7 +492,11 @@ def _shutdown():
 
 
 def main():
-    log(f"daemon starting — client_id='{CLIENT_ID}', poll every {POLL_INTERVAL}s")
+    routing = f", member='{RELAY_MEMBER}'" if RELAY_MEMBER else ""
+    log(
+        f"daemon starting — client_id='{CLIENT_ID}'{routing}, "
+        f"poll every {POLL_INTERVAL}s"
+    )
     threading.Thread(target=_shell_reaper, daemon=True).start()
     connect()
     while True:

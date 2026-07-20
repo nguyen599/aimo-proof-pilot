@@ -4,6 +4,14 @@ RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026
 SPACE_SLUG="${RELAY_SPACE//\//_}"
 SPACE_SLUG="${SPACE_SLUG//[^A-Za-z0-9_.-]/_}"
 NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
+case "$NODE_LABEL" in
+    0) DEFAULT_RELAY_MEMBER="vu" ;;
+    1) DEFAULT_RELAY_MEMBER="bogo" ;;
+    2) DEFAULT_RELAY_MEMBER="yi" ;;
+    3) DEFAULT_RELAY_MEMBER="nguyen" ;;
+    *) DEFAULT_RELAY_MEMBER="" ;;
+esac
+RELAY_MEMBER="${RELAY_MEMBER:-${TEAM_MEMBER:-$DEFAULT_RELAY_MEMBER}}"
 HOST="$(hostname 2>/dev/null || echo unknown-host)"
 NODE_RUNTIME_ROOT="${REMOTE_SHELL_RUNTIME_ROOT:-/tmp/imochallenge/node${NODE_LABEL}}"
 LOGS="${NODE_RUNTIME_ROOT}/logs"
@@ -19,10 +27,11 @@ export HF_HUB_DISABLE_TELEMETRY=1
 export DO_NOT_TRACK=1
 export POLL_INTERVAL="${POLL_INTERVAL:-5}"
 export CLIENT_ID="${CLIENT_ID:-node${NODE_LABEL}-${HOST}}"
-export RELAY_SPACE
+export RELAY_MEMBER RELAY_SPACE
 
 echo "remote-shell daemon hotfix node=${NODE_LABEL} host=${HOST}"
 echo "relay_space=${RELAY_SPACE}"
+echo "relay_member=${RELAY_MEMBER:-unassigned}"
 echo "python=${PY}"
 echo "python_site=${PYTHON_SITE}"
 echo "hf_token_present=$([ -n "${HF_TOKEN:-${HUGGINGFACE_TOKEN:-}}" ] && echo yes || echo no)"
@@ -125,6 +134,7 @@ export HF_HUB_DISABLE_TELEMETRY=1
 export DO_NOT_TRACK=1
 export POLL_INTERVAL="${POLL_INTERVAL:-5}"
 export RELAY_SPACE="${RELAY_SPACE:-${REMOTE_SHELL_SPACE:-${CONTROL_PANEL_SPACE:-imo2026-challenge/control-panel-nguyen}}}"
+export RELAY_MEMBER="${RELAY_MEMBER:-${TEAM_MEMBER:-}}"
 NODE_LABEL="${GLOBAL_RANK:-${NODE_RANK:-${SLURM_NODEID:-${RANK:-none}}}}"
 HOST="$(hostname 2>/dev/null || echo unknown-host)"
 export CLIENT_ID="${CLIENT_ID:-node${NODE_LABEL}-${HOST}}"
@@ -144,7 +154,7 @@ fi
 attempt=0
 while true; do
     attempt=$((attempt + 1))
-    echo "$(date -u +%FT%TZ) starting remote-shell client attempt=${attempt} relay_space=${RELAY_SPACE} client_id=${CLIENT_ID} client_py=${CLIENT_PY}"
+    echo "$(date -u +%FT%TZ) starting remote-shell client attempt=${attempt} relay_space=${RELAY_SPACE} relay_member=${RELAY_MEMBER:-unassigned} client_id=${CLIENT_ID} client_py=${CLIENT_PY}"
     "$PY" "$CLIENT_PY"
     rc=$?
     echo "$(date -u +%FT%TZ) remote-shell client exited rc=${rc}; restarting in ${RESTART_DELAY}s"
