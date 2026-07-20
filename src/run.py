@@ -111,7 +111,7 @@ class CFG:
     # Last N candidates use a shorter proof-only prompt. This keeps some
     # candidates verifyable when full proof+self-evaluation generations hit
     # the context/output limit.
-    proof_only_candidate_count = 0
+    proof_only_candidate_count = 6
     skip_self_score_zero = True
     wait_for_all_generations_before_verify = False
     verify_candidate_limit_while_generating = 2
